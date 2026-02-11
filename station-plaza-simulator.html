@@ -1,0 +1,1490 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>駅前広場シミュレータ</title>
+<style>
+:root {
+  --sidebar-w: 280px;
+  --header-h: 44px;
+  --panel-bg: #1e1e2e;
+  --panel-fg: #cdd6f4;
+  --accent: #89b4fa;
+  --accent2: #a6e3a1;
+  --danger: #f38ba8;
+  --warn: #fab387;
+  --surface0: #313244;
+  --surface1: #45475a;
+  --surface2: #585b70;
+  --bus-color: #74c7ec;
+  --taxi-color: #f9e2af;
+  --car-color: #a6e3a1;
+  --road-color: #585b70;
+  --sidewalk-color: #b4befe;
+  --rotary-color: #6c7086;
+  --site-color: rgba(180,190,254,0.15);
+  --site-border: #b4befe;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Segoe UI', 'Hiragino Sans', 'Meiryo', sans-serif; background: #11111b; color: var(--panel-fg); overflow: hidden; height: 100vh; }
+header { height: var(--header-h); background: var(--panel-bg); display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--surface1); gap: 12px; }
+header h1 { font-size: 15px; font-weight: 600; white-space: nowrap; }
+header .sep { width:1px; height:24px; background: var(--surface1); }
+header .toolbar { display: flex; gap: 4px; }
+header .toolbar button { background: var(--surface0); border:1px solid var(--surface1); color: var(--panel-fg); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all .15s; }
+header .toolbar button:hover { background: var(--surface1); }
+header .toolbar button.active { background: var(--accent); color: #11111b; border-color: var(--accent); }
+header .right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+header .right button { background: var(--accent); border:none; color:#11111b; padding:5px 12px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600; }
+header .right button.danger { background: var(--danger); }
+header .right button:hover { opacity:.85; }
+
+.main { display: flex; height: calc(100vh - var(--header-h)); }
+
+.sidebar { width: var(--sidebar-w); background: var(--panel-bg); border-right: 1px solid var(--surface1); overflow-y: auto; flex-shrink: 0; }
+.sidebar section { padding: 12px; border-bottom: 1px solid var(--surface1); }
+.sidebar section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--surface2); margin-bottom: 8px; }
+.sidebar label { display: flex; align-items: center; justify-content: space-between; font-size: 12px; margin-bottom: 6px; }
+.sidebar label span { flex-shrink: 0; }
+.sidebar input[type=number], .sidebar input[type=text], .sidebar select {
+  background: var(--surface0); border:1px solid var(--surface1); color: var(--panel-fg);
+  padding: 3px 6px; border-radius: 3px; font-size: 12px; width: 90px; text-align: right;
+}
+.sidebar input[type=range] { width: 90px; }
+.sidebar .color-row { display: flex; align-items: center; gap: 6px; }
+.sidebar input[type=color] { width: 24px; height: 24px; border: none; background: none; cursor: pointer; }
+.sidebar .btn-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.sidebar .btn-row button {
+  background: var(--surface0); border:1px solid var(--surface1); color: var(--panel-fg);
+  padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; transition: all .15s;
+}
+.sidebar .btn-row button:hover { background: var(--surface1); }
+.sidebar .btn-row button.active { background: var(--accent); color: #11111b; border-color: var(--accent); }
+
+.canvas-wrap { flex:1; position: relative; overflow: hidden; background: #181825; }
+canvas { display: block; }
+
+.statusbar { position: absolute; bottom: 0; left: 0; right: 0; height: 24px; background: rgba(30,30,46,.9); display: flex; align-items: center; padding: 0 12px; font-size: 11px; color: var(--surface2); gap: 16px; border-top: 1px solid var(--surface1); }
+.statusbar .coord { color: var(--panel-fg); }
+
+.prop-panel { position: absolute; top: 8px; right: 8px; width: 240px; background: var(--panel-bg); border: 1px solid var(--surface1); border-radius: 6px; padding: 12px; font-size: 12px; display: none; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+.prop-panel h4 { font-size: 13px; margin-bottom: 8px; color: var(--accent); }
+.prop-panel label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+.prop-panel input[type=number], .prop-panel select {
+  background: var(--surface0); border:1px solid var(--surface1); color: var(--panel-fg);
+  padding: 2px 5px; border-radius: 3px; font-size: 12px; width: 80px; text-align: right;
+}
+.prop-panel .del-btn { background: var(--danger); border:none; color:#11111b; padding:4px 10px; border-radius:3px; cursor:pointer; font-size:11px; font-weight:600; margin-top:8px; width:100%; }
+.prop-panel .del-btn:hover { opacity:.85; }
+
+.legend { position: absolute; bottom: 32px; right: 8px; background: rgba(30,30,46,.92); border: 1px solid var(--surface1); border-radius: 6px; padding: 10px 14px; font-size: 11px; }
+.legend div { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.legend .swatch { width: 14px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+
+/* Elevation overlay legend */
+.elev-legend { position: absolute; bottom: 32px; left: 8px; background: rgba(30,30,46,.92); border: 1px solid var(--surface1); border-radius: 6px; padding: 10px; font-size: 11px; display:none; }
+.elev-legend .grad { width: 20px; height: 100px; border-radius: 2px; }
+
+/* Modal */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:none; z-index:100; align-items:center; justify-content:center; }
+.modal-overlay.show { display:flex; }
+.modal { background: var(--panel-bg); border:1px solid var(--surface1); border-radius:8px; padding:20px; width:380px; max-height:80vh; overflow-y:auto; }
+.modal h3 { margin-bottom:12px; }
+.modal label { display:block; font-size:12px; margin-bottom:8px; }
+.modal input, .modal select { width:100%; background:var(--surface0); border:1px solid var(--surface1); color:var(--panel-fg); padding:5px 8px; border-radius:4px; font-size:12px; margin-top:2px; }
+.modal .modal-btns { display:flex; gap:8px; margin-top:16px; justify-content:flex-end; }
+.modal .modal-btns button { padding:6px 16px; border-radius:4px; border:none; cursor:pointer; font-size:12px; font-weight:600; }
+.modal .modal-btns .ok { background:var(--accent); color:#11111b; }
+.modal .modal-btns .cancel { background:var(--surface1); color:var(--panel-fg); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>駅前広場シミュレータ</h1>
+  <div class="sep"></div>
+  <div class="toolbar" id="tools">
+    <button data-tool="select" class="active" title="選択 (V)">&#9654; 選択</button>
+    <button data-tool="pan" title="移動 (H)">&#9995; 移動</button>
+    <button data-tool="site" title="敷地描画 (S)">&#9634; 敷地</button>
+    <button data-tool="road" title="接続道路 (R)">&#9552; 道路</button>
+    <button data-tool="rotary" title="ロータリー配置 (O)">&#9711; ロータリー</button>
+    <button data-tool="bus" title="バス乗降場 (B)">&#128653; バス</button>
+    <button data-tool="taxi" title="タクシー乗降場 (T)">&#128663; タクシー</button>
+    <button data-tool="car" title="一般車乗降場 (C)">&#128664; 一般車</button>
+    <button data-tool="sidewalk" title="歩道 (W)">&#128694; 歩道</button>
+    <button data-tool="elevation" title="地盤高設定 (E)">&#9650; 標高</button>
+  </div>
+  <div class="right">
+    <button onclick="startSimulation()" id="simBtn">&#9654; シミュレーション</button>
+    <button onclick="exportProject()">保存</button>
+    <button onclick="document.getElementById('importFile').click()">読込</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importProject(event)">
+    <button class="danger" onclick="clearAll()">全消去</button>
+  </div>
+</header>
+
+<div class="main">
+  <div class="sidebar">
+    <section>
+      <h3>グリッド・表示</h3>
+      <label><span>グリッド間隔 (m)</span><input type="number" id="gridSize" value="5" min="1" max="50" onchange="draw()"></label>
+      <label><span>スナップ</span><input type="checkbox" id="snapGrid" checked></label>
+      <label><span>グリッド表示</span><input type="checkbox" id="showGrid" checked onchange="draw()"></label>
+      <label><span>標高表示</span><input type="checkbox" id="showElev" onchange="toggleElevOverlay()"></label>
+      <label><span>寸法表示</span><input type="checkbox" id="showDims" checked onchange="draw()"></label>
+      <label><span>縮尺 1:</span><input type="number" id="scaleDisp" value="500" min="100" max="5000" step="100"></label>
+    </section>
+
+    <section>
+      <h3>敷地情報</h3>
+      <label><span>面積</span><span id="siteArea">-</span></label>
+      <label><span>周長</span><span id="sitePerimeter">-</span></label>
+    </section>
+
+    <section>
+      <h3>ロータリー設定</h3>
+      <label><span>外径 (m)</span><input type="number" id="rotaryOuterR" value="25" min="5" max="100" step="0.5" onchange="updateRotaryFromUI()"></label>
+      <label><span>内径 (m)</span><input type="number" id="rotaryInnerR" value="10" min="2" max="80" step="0.5" onchange="updateRotaryFromUI()"></label>
+      <label><span>車線数</span><select id="rotaryLanes" onchange="updateRotaryFromUI()"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></label>
+      <label><span>車線幅 (m)</span><input type="number" id="rotaryLaneW" value="3.5" min="2.5" max="5" step="0.25" onchange="updateRotaryFromUI()"></label>
+    </section>
+
+    <section>
+      <h3>道路設定</h3>
+      <label><span>幅員 (m)</span><input type="number" id="roadWidth" value="12" min="4" max="50" step="0.5"></label>
+      <label><span>車線数</span><select id="roadLanes"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option></select></label>
+    </section>
+
+    <section>
+      <h3>乗降場設定</h3>
+      <label><span>バース長 (m)</span><input type="number" id="berthLen" value="12" min="5" max="30" step="0.5"></label>
+      <label><span>バース幅 (m)</span><input type="number" id="berthW" value="3" min="2" max="6" step="0.25"></label>
+      <label><span>バース数</span><input type="number" id="berthCount" value="3" min="1" max="10"></label>
+    </section>
+
+    <section>
+      <h3>標高設定</h3>
+      <label><span>基準高 (m)</span><input type="number" id="baseElev" value="0" step="0.1"></label>
+      <label><span>設定高 (m)</span><input type="number" id="setElev" value="0" step="0.1"></label>
+      <label><span>ブラシ径 (m)</span><input type="number" id="elevBrush" value="10" min="2" max="50" step="1"></label>
+    </section>
+
+    <section>
+      <h3>シミュレーション</h3>
+      <label><span>バス台数</span><input type="number" id="simBus" value="3" min="0" max="20"></label>
+      <label><span>タクシー台数</span><input type="number" id="simTaxi" value="5" min="0" max="30"></label>
+      <label><span>一般車台数</span><input type="number" id="simCar" value="8" min="0" max="50"></label>
+      <label><span>速度 (km/h)</span><input type="number" id="simSpeed" value="20" min="5" max="40" step="5"></label>
+    </section>
+
+    <section>
+      <h3>操作ヘルプ</h3>
+      <div style="font-size:11px; color:var(--surface2); line-height:1.6;">
+        <div>スクロール: ズーム</div>
+        <div>中クリック+ドラッグ: 移動</div>
+        <div>右クリック: コンテキスト</div>
+        <div>Delete: 選択要素削除</div>
+        <div>Esc: 選択解除/ツール解除</div>
+        <div>Ctrl+Z: 元に戻す</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="cv"></canvas>
+
+    <div class="statusbar">
+      <span>座標: <span class="coord" id="coordDisp">0, 0</span> m</span>
+      <span>ズーム: <span id="zoomDisp">100</span>%</span>
+      <span>ツール: <span id="toolDisp">選択</span></span>
+      <span id="simStatus"></span>
+    </div>
+
+    <div class="prop-panel" id="propPanel"></div>
+
+    <div class="legend">
+      <div><div class="swatch" style="background:var(--bus-color)"></div>バス乗降場</div>
+      <div><div class="swatch" style="background:var(--taxi-color)"></div>タクシー乗降場</div>
+      <div><div class="swatch" style="background:var(--car-color)"></div>一般車乗降場</div>
+      <div><div class="swatch" style="background:var(--road-color)"></div>車路</div>
+      <div><div class="swatch" style="background:var(--sidewalk-color)"></div>歩道</div>
+      <div><div class="swatch" style="background:var(--rotary-color)"></div>ロータリー</div>
+    </div>
+
+    <div class="elev-legend" id="elevLegend">
+      <div style="margin-bottom:4px;">標高 (m)</div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <canvas id="elevGrad" width="20" height="100"></canvas>
+        <div style="display:flex; flex-direction:column; justify-content:space-between; height:100px;">
+          <span id="elevMax">+5.0</span>
+          <span id="elevMin">-5.0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Elevation Point Modal -->
+<div class="modal-overlay" id="elevModal">
+  <div class="modal">
+    <h3>標高ポイント設定</h3>
+    <label>標高 (m)<input type="number" id="elevModalVal" value="0" step="0.1"></label>
+    <div class="modal-btns">
+      <button class="cancel" onclick="closeElevModal()">キャンセル</button>
+      <button class="ok" onclick="confirmElevModal()">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== STATE ====================
+const canvas = document.getElementById('cv');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('canvasWrap');
+
+const PPM = 4; // base pixels per meter
+let cam = { x: 0, y: 0, zoom: 1 };
+let tool = 'select';
+let mouseWorld = { x: 0, y: 0 };
+let mouseScreen = { x: 0, y: 0 };
+let isDragging = false;
+let dragStart = null;
+let panStart = null;
+let isPanning = false;
+
+// Project data
+let project = {
+  site: [],           // polygon points [{x,y}]
+  roads: [],          // {p1:{x,y}, p2:{x,y}, width, lanes}
+  rotaries: [],       // {cx, cy, outerR, innerR, lanes, laneW}
+  zones: [],          // {type:'bus'|'taxi'|'car', x, y, w, h, angle, berths}
+  sidewalks: [],      // {points:[{x,y}], width}
+  elevPoints: [],     // {x, y, elev}
+};
+
+let selected = null; // {type, index}
+let drawing = null;  // temp drawing state
+let undoStack = [];
+let simRunning = false;
+let simVehicles = [];
+let simAnimId = null;
+
+// ==================== INIT ====================
+function init() {
+  resize();
+  window.addEventListener('resize', resize);
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mouseup', onMouseUp);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('keydown', onKeyDown);
+
+  document.querySelectorAll('#tools button').forEach(btn => {
+    btn.addEventListener('click', () => setTool(btn.dataset.tool));
+  });
+
+  cam.x = -canvas.width / 2 / PPM;
+  cam.y = -canvas.height / 2 / PPM;
+
+  draw();
+}
+
+function resize() {
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  draw();
+}
+
+// ==================== COORDINATE TRANSFORMS ====================
+function worldToScreen(wx, wy) {
+  return {
+    x: (wx - cam.x) * PPM * cam.zoom,
+    y: (wy - cam.y) * PPM * cam.zoom
+  };
+}
+
+function screenToWorld(sx, sy) {
+  return {
+    x: sx / (PPM * cam.zoom) + cam.x,
+    y: sy / (PPM * cam.zoom) + cam.y
+  };
+}
+
+function snap(v) {
+  if (!document.getElementById('snapGrid').checked) return v;
+  const g = parseFloat(document.getElementById('gridSize').value) || 5;
+  return { x: Math.round(v.x / g) * g, y: Math.round(v.y / g) * g };
+}
+
+// ==================== TOOLS ====================
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll('#tools button').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  const names = {select:'選択',pan:'移動',site:'敷地描画',road:'道路配置',rotary:'ロータリー配置',bus:'バス乗降場',taxi:'タクシー乗降場',car:'一般車乗降場',sidewalk:'歩道',elevation:'標高設定'};
+  document.getElementById('toolDisp').textContent = names[t] || t;
+  if (drawing && drawing.tool !== t) { drawing = null; }
+  canvas.style.cursor = t === 'pan' ? 'grab' : t === 'select' ? 'default' : 'crosshair';
+  draw();
+}
+
+// ==================== UNDO ====================
+function saveUndo() {
+  undoStack.push(JSON.stringify(project));
+  if (undoStack.length > 50) undoStack.shift();
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  project = JSON.parse(undoStack.pop());
+  selected = null;
+  draw();
+}
+
+// ==================== MOUSE EVENTS ====================
+function onMouseDown(e) {
+  const rect = canvas.getBoundingClientRect();
+  mouseScreen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  mouseWorld = screenToWorld(mouseScreen.x, mouseScreen.y);
+  const snapped = snap(mouseWorld);
+
+  // Middle button or pan tool: start panning
+  if (e.button === 1 || (e.button === 0 && tool === 'pan')) {
+    isPanning = true;
+    panStart = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y };
+    canvas.style.cursor = 'grabbing';
+    return;
+  }
+
+  if (e.button !== 0) return;
+
+  if (tool === 'select') {
+    selected = hitTest(mouseWorld);
+    showPropPanel();
+    dragStart = { ...mouseWorld };
+    isDragging = !!selected;
+    draw();
+    return;
+  }
+
+  if (tool === 'site') {
+    if (!drawing) {
+      saveUndo();
+      drawing = { tool: 'site', points: [{ ...snapped }] };
+    } else {
+      // Close if near first point
+      const d = dist(snapped, drawing.points[0]);
+      if (drawing.points.length >= 3 && d < 3) {
+        project.site = drawing.points;
+        drawing = null;
+        updateSiteInfo();
+      } else {
+        drawing.points.push({ ...snapped });
+      }
+    }
+    draw();
+    return;
+  }
+
+  if (tool === 'road') {
+    if (!drawing) {
+      saveUndo();
+      drawing = { tool: 'road', p1: { ...snapped } };
+    } else {
+      const w = parseFloat(document.getElementById('roadWidth').value) || 12;
+      const l = parseInt(document.getElementById('roadLanes').value) || 2;
+      project.roads.push({ p1: drawing.p1, p2: { ...snapped }, width: w, lanes: l });
+      drawing = null;
+    }
+    draw();
+    return;
+  }
+
+  if (tool === 'rotary') {
+    saveUndo();
+    const outerR = parseFloat(document.getElementById('rotaryOuterR').value) || 25;
+    const innerR = parseFloat(document.getElementById('rotaryInnerR').value) || 10;
+    const lanes = parseInt(document.getElementById('rotaryLanes').value) || 2;
+    const laneW = parseFloat(document.getElementById('rotaryLaneW').value) || 3.5;
+    project.rotaries.push({ cx: snapped.x, cy: snapped.y, outerR, innerR, lanes, laneW });
+    draw();
+    return;
+  }
+
+  if (tool === 'bus' || tool === 'taxi' || tool === 'car') {
+    saveUndo();
+    const bLen = parseFloat(document.getElementById('berthLen').value) || 12;
+    const bW = parseFloat(document.getElementById('berthW').value) || 3;
+    const bCount = parseInt(document.getElementById('berthCount').value) || 3;
+    project.zones.push({
+      type: tool, x: snapped.x, y: snapped.y,
+      w: bLen * bCount, h: bW, angle: 0, berths: bCount, berthLen: bLen
+    });
+    draw();
+    return;
+  }
+
+  if (tool === 'sidewalk') {
+    if (!drawing) {
+      saveUndo();
+      drawing = { tool: 'sidewalk', points: [{ ...snapped }] };
+    } else {
+      drawing.points.push({ ...snapped });
+    }
+    draw();
+    return;
+  }
+
+  if (tool === 'elevation') {
+    saveUndo();
+    const elev = parseFloat(document.getElementById('setElev').value) || 0;
+    // Check if there's a nearby point to update
+    const existing = project.elevPoints.findIndex(p => dist(p, snapped) < 3);
+    if (existing >= 0) {
+      project.elevPoints[existing].elev = elev;
+    } else {
+      project.elevPoints.push({ x: snapped.x, y: snapped.y, elev });
+    }
+    draw();
+    return;
+  }
+}
+
+function onMouseMove(e) {
+  const rect = canvas.getBoundingClientRect();
+  mouseScreen = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  mouseWorld = screenToWorld(mouseScreen.x, mouseScreen.y);
+
+  document.getElementById('coordDisp').textContent =
+    `${mouseWorld.x.toFixed(1)}, ${mouseWorld.y.toFixed(1)}`;
+
+  if (isPanning) {
+    const dx = (e.clientX - panStart.x) / (PPM * cam.zoom);
+    const dy = (e.clientY - panStart.y) / (PPM * cam.zoom);
+    cam.x = panStart.cx - dx;
+    cam.y = panStart.cy - dy;
+    draw();
+    return;
+  }
+
+  if (isDragging && selected) {
+    const snapped = snap(mouseWorld);
+    const dx = snapped.x - snap(dragStart).x;
+    const dy = snapped.y - snap(dragStart).y;
+    if (dx === 0 && dy === 0) return;
+    moveSelected(dx, dy);
+    dragStart = { ...mouseWorld };
+    draw();
+    return;
+  }
+
+  if (drawing) draw();
+}
+
+function onMouseUp(e) {
+  if (isPanning) {
+    isPanning = false;
+    canvas.style.cursor = tool === 'pan' ? 'grab' : tool === 'select' ? 'default' : 'crosshair';
+    return;
+  }
+  isDragging = false;
+}
+
+function onWheel(e) {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const wBefore = screenToWorld(mx, my);
+
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  cam.zoom = Math.max(0.1, Math.min(20, cam.zoom * factor));
+
+  const wAfter = screenToWorld(mx, my);
+  cam.x -= (wAfter.x - wBefore.x);
+  cam.y -= (wAfter.y - wBefore.y);
+
+  document.getElementById('zoomDisp').textContent = Math.round(cam.zoom * 100);
+  draw();
+}
+
+function onKeyDown(e) {
+  if (e.key === 'Escape') {
+    if (drawing && drawing.tool === 'sidewalk' && drawing.points.length >= 2) {
+      const sw = parseFloat(document.getElementById('roadWidth').value) || 3;
+      project.sidewalks.push({ points: drawing.points, width: 3 });
+      drawing = null;
+    } else {
+      drawing = null;
+      selected = null;
+      showPropPanel();
+    }
+    draw();
+  }
+  if (e.key === 'Delete' && selected) {
+    saveUndo();
+    deleteSelected();
+    draw();
+  }
+  if (e.ctrlKey && e.key === 'z') { undo(); }
+  if (e.key === 'v') setTool('select');
+  if (e.key === 'h') setTool('pan');
+  if (e.key === 's' && !e.ctrlKey) setTool('site');
+  if (e.key === 'r' && !e.ctrlKey) setTool('road');
+  if (e.key === 'o') setTool('rotary');
+  if (e.key === 'b') setTool('bus');
+  if (e.key === 't') setTool('taxi');
+  if (e.key === 'c' && !e.ctrlKey) setTool('car');
+  if (e.key === 'w') setTool('sidewalk');
+  if (e.key === 'e') setTool('elevation');
+}
+
+// ==================== HIT TEST ====================
+function hitTest(wpos) {
+  // Zones
+  for (let i = project.zones.length - 1; i >= 0; i--) {
+    const z = project.zones[i];
+    if (pointInRect(wpos, z)) return { type: 'zone', index: i };
+  }
+  // Rotaries
+  for (let i = project.rotaries.length - 1; i >= 0; i--) {
+    const r = project.rotaries[i];
+    const d = dist(wpos, { x: r.cx, y: r.cy });
+    if (d <= r.outerR) return { type: 'rotary', index: i };
+  }
+  // Roads
+  for (let i = project.roads.length - 1; i >= 0; i--) {
+    const rd = project.roads[i];
+    if (pointNearLine(wpos, rd.p1, rd.p2, rd.width / 2 + 2)) return { type: 'road', index: i };
+  }
+  // Sidewalks
+  for (let i = project.sidewalks.length - 1; i >= 0; i--) {
+    const sw = project.sidewalks[i];
+    for (let j = 0; j < sw.points.length - 1; j++) {
+      if (pointNearLine(wpos, sw.points[j], sw.points[j + 1], sw.width / 2 + 2))
+        return { type: 'sidewalk', index: i };
+    }
+  }
+  // Elevation points
+  for (let i = project.elevPoints.length - 1; i >= 0; i--) {
+    if (dist(wpos, project.elevPoints[i]) < 3) return { type: 'elev', index: i };
+  }
+  // Site
+  if (project.site.length >= 3 && pointInPolygon(wpos, project.site))
+    return { type: 'site', index: 0 };
+  return null;
+}
+
+function moveSelected(dx, dy) {
+  if (!selected) return;
+  saveUndo();
+  const s = selected;
+  if (s.type === 'zone') {
+    project.zones[s.index].x += dx;
+    project.zones[s.index].y += dy;
+  } else if (s.type === 'rotary') {
+    project.rotaries[s.index].cx += dx;
+    project.rotaries[s.index].cy += dy;
+  } else if (s.type === 'road') {
+    project.roads[s.index].p1.x += dx;
+    project.roads[s.index].p1.y += dy;
+    project.roads[s.index].p2.x += dx;
+    project.roads[s.index].p2.y += dy;
+  } else if (s.type === 'sidewalk') {
+    project.sidewalks[s.index].points.forEach(p => { p.x += dx; p.y += dy; });
+  } else if (s.type === 'site') {
+    project.site.forEach(p => { p.x += dx; p.y += dy; });
+  } else if (s.type === 'elev') {
+    project.elevPoints[s.index].x += dx;
+    project.elevPoints[s.index].y += dy;
+  }
+}
+
+function deleteSelected() {
+  if (!selected) return;
+  const s = selected;
+  if (s.type === 'zone') project.zones.splice(s.index, 1);
+  else if (s.type === 'rotary') project.rotaries.splice(s.index, 1);
+  else if (s.type === 'road') project.roads.splice(s.index, 1);
+  else if (s.type === 'sidewalk') project.sidewalks.splice(s.index, 1);
+  else if (s.type === 'elev') project.elevPoints.splice(s.index, 1);
+  else if (s.type === 'site') project.site = [];
+  selected = null;
+  showPropPanel();
+}
+
+// ==================== PROPERTIES PANEL ====================
+function showPropPanel() {
+  const panel = document.getElementById('propPanel');
+  if (!selected) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  let html = '';
+  const s = selected;
+
+  if (s.type === 'zone') {
+    const z = project.zones[s.index];
+    const names = { bus: 'バス乗降場', taxi: 'タクシー乗降場', car: '一般車乗降場' };
+    html = `<h4>${names[z.type]}</h4>
+      <label><span>X (m)</span><input type="number" value="${z.x}" onchange="project.zones[${s.index}].x=+this.value;draw()"></label>
+      <label><span>Y (m)</span><input type="number" value="${z.y}" onchange="project.zones[${s.index}].y=+this.value;draw()"></label>
+      <label><span>幅 (m)</span><input type="number" value="${z.w}" step="0.5" onchange="project.zones[${s.index}].w=+this.value;draw()"></label>
+      <label><span>奥行 (m)</span><input type="number" value="${z.h}" step="0.25" onchange="project.zones[${s.index}].h=+this.value;draw()"></label>
+      <label><span>角度 (°)</span><input type="number" value="${z.angle}" step="5" onchange="project.zones[${s.index}].angle=+this.value;draw()"></label>
+      <label><span>バース数</span><input type="number" value="${z.berths}" min="1" max="10" onchange="project.zones[${s.index}].berths=+this.value;draw()"></label>
+      <button class="del-btn" onclick="saveUndo();deleteSelected();draw()">削除</button>`;
+  } else if (s.type === 'rotary') {
+    const r = project.rotaries[s.index];
+    html = `<h4>ロータリー</h4>
+      <label><span>中心X (m)</span><input type="number" value="${r.cx}" onchange="project.rotaries[${s.index}].cx=+this.value;draw()"></label>
+      <label><span>中心Y (m)</span><input type="number" value="${r.cy}" onchange="project.rotaries[${s.index}].cy=+this.value;draw()"></label>
+      <label><span>外径 (m)</span><input type="number" value="${r.outerR}" step="0.5" onchange="project.rotaries[${s.index}].outerR=+this.value;draw()"></label>
+      <label><span>内径 (m)</span><input type="number" value="${r.innerR}" step="0.5" onchange="project.rotaries[${s.index}].innerR=+this.value;draw()"></label>
+      <label><span>車線数</span><input type="number" value="${r.lanes}" min="1" max="4" onchange="project.rotaries[${s.index}].lanes=+this.value;draw()"></label>
+      <label><span>車線幅 (m)</span><input type="number" value="${r.laneW}" step="0.25" onchange="project.rotaries[${s.index}].laneW=+this.value;draw()"></label>
+      <button class="del-btn" onclick="saveUndo();deleteSelected();draw()">削除</button>`;
+  } else if (s.type === 'road') {
+    const rd = project.roads[s.index];
+    const len = dist(rd.p1, rd.p2).toFixed(1);
+    html = `<h4>接続道路</h4>
+      <label><span>延長</span><span>${len} m</span></label>
+      <label><span>幅員 (m)</span><input type="number" value="${rd.width}" step="0.5" onchange="project.roads[${s.index}].width=+this.value;draw()"></label>
+      <label><span>車線数</span><input type="number" value="${rd.lanes}" min="1" max="6" onchange="project.roads[${s.index}].lanes=+this.value;draw()"></label>
+      <button class="del-btn" onclick="saveUndo();deleteSelected();draw()">削除</button>`;
+  } else if (s.type === 'elev') {
+    const ep = project.elevPoints[s.index];
+    html = `<h4>標高ポイント</h4>
+      <label><span>X (m)</span><input type="number" value="${ep.x}" onchange="project.elevPoints[${s.index}].x=+this.value;draw()"></label>
+      <label><span>Y (m)</span><input type="number" value="${ep.y}" onchange="project.elevPoints[${s.index}].y=+this.value;draw()"></label>
+      <label><span>標高 (m)</span><input type="number" value="${ep.elev}" step="0.1" onchange="project.elevPoints[${s.index}].elev=+this.value;draw()"></label>
+      <button class="del-btn" onclick="saveUndo();deleteSelected();draw()">削除</button>`;
+  } else if (s.type === 'site') {
+    html = `<h4>敷地</h4><p style="font-size:11px;">クリック＆ドラッグで移動</p>
+      <button class="del-btn" onclick="saveUndo();deleteSelected();draw()">削除</button>`;
+  }
+  panel.innerHTML = html;
+}
+
+function updateRotaryFromUI() {
+  if (selected && selected.type === 'rotary') {
+    const i = selected.index;
+    project.rotaries[i].outerR = parseFloat(document.getElementById('rotaryOuterR').value);
+    project.rotaries[i].innerR = parseFloat(document.getElementById('rotaryInnerR').value);
+    project.rotaries[i].lanes = parseInt(document.getElementById('rotaryLanes').value);
+    project.rotaries[i].laneW = parseFloat(document.getElementById('rotaryLaneW').value);
+    draw();
+  }
+}
+
+// ==================== DRAWING ====================
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#181825';
+  ctx.fillRect(0, 0, W, H);
+
+  const showGridChk = document.getElementById('showGrid').checked;
+  const showDims = document.getElementById('showDims').checked;
+  const showElev = document.getElementById('showElev').checked;
+
+  // Grid
+  if (showGridChk) drawGrid();
+
+  // Elevation overlay
+  if (showElev) drawElevationOverlay();
+
+  // Site
+  drawSite();
+
+  // Roads
+  project.roads.forEach((rd, i) => drawRoad(rd, selected?.type === 'road' && selected.index === i));
+
+  // Sidewalks
+  project.sidewalks.forEach((sw, i) => drawSidewalk(sw, selected?.type === 'sidewalk' && selected.index === i));
+
+  // Rotaries
+  project.rotaries.forEach((r, i) => drawRotary(r, selected?.type === 'rotary' && selected.index === i));
+
+  // Zones
+  project.zones.forEach((z, i) => drawZone(z, selected?.type === 'zone' && selected.index === i));
+
+  // Elevation points
+  project.elevPoints.forEach((ep, i) => drawElevPoint(ep, selected?.type === 'elev' && selected.index === i));
+
+  // Dimensions
+  if (showDims) drawDimensions();
+
+  // Drawing preview
+  drawPreview();
+
+  // Sim vehicles
+  if (simRunning) drawSimVehicles();
+}
+
+function drawGrid() {
+  const g = parseFloat(document.getElementById('gridSize').value) || 5;
+  const tl = screenToWorld(0, 0);
+  const br = screenToWorld(canvas.width, canvas.height);
+
+  ctx.strokeStyle = 'rgba(69,71,90,0.3)';
+  ctx.lineWidth = 0.5;
+
+  const startX = Math.floor(tl.x / g) * g;
+  const startY = Math.floor(tl.y / g) * g;
+
+  ctx.beginPath();
+  for (let x = startX; x <= br.x; x += g) {
+    const s = worldToScreen(x, 0);
+    ctx.moveTo(s.x, 0);
+    ctx.lineTo(s.x, canvas.height);
+  }
+  for (let y = startY; y <= br.y; y += g) {
+    const s = worldToScreen(0, y);
+    ctx.moveTo(0, s.y);
+    ctx.lineTo(canvas.width, s.y);
+  }
+  ctx.stroke();
+
+  // Origin cross
+  ctx.strokeStyle = 'rgba(137,180,250,0.4)';
+  ctx.lineWidth = 1;
+  const o = worldToScreen(0, 0);
+  ctx.beginPath();
+  ctx.moveTo(o.x, 0); ctx.lineTo(o.x, canvas.height);
+  ctx.moveTo(0, o.y); ctx.lineTo(canvas.width, o.y);
+  ctx.stroke();
+}
+
+function drawSite() {
+  const pts = project.site;
+  if (pts.length === 0) return;
+
+  ctx.beginPath();
+  const s0 = worldToScreen(pts[0].x, pts[0].y);
+  ctx.moveTo(s0.x, s0.y);
+  for (let i = 1; i < pts.length; i++) {
+    const s = worldToScreen(pts[i].x, pts[i].y);
+    ctx.lineTo(s.x, s.y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(180,190,254,0.08)';
+  ctx.fill();
+  ctx.strokeStyle = selected?.type === 'site' ? '#f5c2e7' : '#b4befe';
+  ctx.lineWidth = selected?.type === 'site' ? 2.5 : 1.5;
+  ctx.setLineDash([6, 3]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Vertices
+  pts.forEach(p => {
+    const s = worldToScreen(p.x, p.y);
+    ctx.fillStyle = '#b4befe';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawRoad(rd, sel) {
+  const s1 = worldToScreen(rd.p1.x, rd.p1.y);
+  const s2 = worldToScreen(rd.p2.x, rd.p2.y);
+  const w = rd.width * PPM * cam.zoom;
+
+  const angle = Math.atan2(s2.y - s1.y, s2.x - s1.x);
+  const nx = Math.cos(angle + Math.PI / 2);
+  const ny = Math.sin(angle + Math.PI / 2);
+
+  // Road surface
+  ctx.beginPath();
+  ctx.moveTo(s1.x + nx * w / 2, s1.y + ny * w / 2);
+  ctx.lineTo(s2.x + nx * w / 2, s2.y + ny * w / 2);
+  ctx.lineTo(s2.x - nx * w / 2, s2.y - ny * w / 2);
+  ctx.lineTo(s1.x - nx * w / 2, s1.y - ny * w / 2);
+  ctx.closePath();
+  ctx.fillStyle = sel ? 'rgba(88,91,112,0.7)' : 'rgba(88,91,112,0.5)';
+  ctx.fill();
+  ctx.strokeStyle = sel ? '#f5c2e7' : '#6c7086';
+  ctx.lineWidth = sel ? 2 : 1;
+  ctx.stroke();
+
+  // Lane markings
+  if (rd.lanes > 1) {
+    ctx.strokeStyle = 'rgba(205,214,244,0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([8, 6]);
+    for (let l = 1; l < rd.lanes; l++) {
+      const offset = (l / rd.lanes - 0.5) * w;
+      ctx.beginPath();
+      ctx.moveTo(s1.x + nx * offset, s1.y + ny * offset);
+      ctx.lineTo(s2.x + nx * offset, s2.y + ny * offset);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Direction arrow
+  const mx = (s1.x + s2.x) / 2, my = (s1.y + s2.y) / 2;
+  ctx.save();
+  ctx.translate(mx, my);
+  ctx.rotate(angle);
+  ctx.fillStyle = 'rgba(205,214,244,0.4)';
+  ctx.beginPath();
+  ctx.moveTo(8, 0);
+  ctx.lineTo(-4, -4);
+  ctx.lineTo(-4, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawRotary(r, sel) {
+  const sc = worldToScreen(r.cx, r.cy);
+  const outerPx = r.outerR * PPM * cam.zoom;
+  const innerPx = r.innerR * PPM * cam.zoom;
+
+  // Outer ring
+  ctx.beginPath();
+  ctx.arc(sc.x, sc.y, outerPx, 0, Math.PI * 2);
+  ctx.arc(sc.x, sc.y, innerPx, 0, Math.PI * 2, true);
+  ctx.fillStyle = sel ? 'rgba(108,112,134,0.6)' : 'rgba(108,112,134,0.4)';
+  ctx.fill();
+
+  // Outer border
+  ctx.beginPath();
+  ctx.arc(sc.x, sc.y, outerPx, 0, Math.PI * 2);
+  ctx.strokeStyle = sel ? '#f5c2e7' : '#9399b2';
+  ctx.lineWidth = sel ? 2.5 : 1.5;
+  ctx.stroke();
+
+  // Inner island
+  ctx.beginPath();
+  ctx.arc(sc.x, sc.y, innerPx, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(166,227,161,0.2)';
+  ctx.fill();
+  ctx.strokeStyle = '#a6e3a1';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Lane markings
+  if (r.lanes > 1) {
+    ctx.strokeStyle = 'rgba(205,214,244,0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+    for (let l = 1; l < r.lanes; l++) {
+      const lr = innerPx + (outerPx - innerPx) * (l / r.lanes);
+      ctx.beginPath();
+      ctx.arc(sc.x, sc.y, lr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Direction arrows (counterclockwise for Japan)
+  ctx.fillStyle = 'rgba(205,214,244,0.5)';
+  const midR = (outerPx + innerPx) / 2;
+  for (let a = 0; a < 4; a++) {
+    const angle = (a * Math.PI / 2) + Math.PI / 4;
+    const ax = sc.x + Math.cos(angle) * midR;
+    const ay = sc.y + Math.sin(angle) * midR;
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(angle + Math.PI / 2); // tangent direction (clockwise on screen = CCW in real)
+    ctx.beginPath();
+    ctx.moveTo(6, 0);
+    ctx.lineTo(-3, -3);
+    ctx.lineTo(-3, 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Label
+  ctx.fillStyle = 'rgba(205,214,244,0.6)';
+  ctx.font = `${Math.max(10, 12 * cam.zoom)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(`R=${r.outerR}m`, sc.x, sc.y - 4);
+  ctx.fillText(`${r.lanes}車線`, sc.x, sc.y + 12);
+}
+
+function drawZone(z, sel) {
+  const sc = worldToScreen(z.x, z.y);
+  const w = z.w * PPM * cam.zoom;
+  const h = z.h * PPM * cam.zoom;
+  const colors = { bus: 'rgba(116,199,236,', taxi: 'rgba(249,226,175,', car: 'rgba(166,227,161,' };
+  const borderColors = { bus: '#74c7ec', taxi: '#f9e2af', car: '#a6e3a1' };
+  const labels = { bus: 'バス', taxi: 'タクシー', car: '一般車' };
+
+  ctx.save();
+  ctx.translate(sc.x, sc.y);
+  ctx.rotate(z.angle * Math.PI / 180);
+
+  // Fill
+  ctx.fillStyle = colors[z.type] + '0.3)';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = sel ? '#f5c2e7' : borderColors[z.type];
+  ctx.lineWidth = sel ? 2.5 : 1.5;
+  ctx.strokeRect(0, 0, w, h);
+
+  // Berth dividers
+  if (z.berths > 1) {
+    ctx.strokeStyle = colors[z.type] + '0.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    for (let b = 1; b < z.berths; b++) {
+      const bx = (b / z.berths) * w;
+      ctx.beginPath();
+      ctx.moveTo(bx, 0);
+      ctx.lineTo(bx, h);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Vehicle icons per berth
+  const iconSize = Math.min(w / z.berths * 0.6, h * 0.6);
+  ctx.fillStyle = colors[z.type] + '0.6)';
+  for (let b = 0; b < z.berths; b++) {
+    const bx = (b + 0.5) * (w / z.berths);
+    const by = h / 2;
+    ctx.beginPath();
+    ctx.roundRect(bx - iconSize / 2, by - iconSize / 4, iconSize, iconSize / 2, 2);
+    ctx.fill();
+  }
+
+  // Label
+  ctx.fillStyle = borderColors[z.type];
+  ctx.font = `${Math.max(9, 11 * cam.zoom)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(`${labels[z.type]} ×${z.berths}`, w / 2, -4);
+
+  ctx.restore();
+}
+
+function drawSidewalk(sw, sel) {
+  if (sw.points.length < 2) return;
+  const w = sw.width * PPM * cam.zoom;
+
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = sel ? 'rgba(245,194,231,0.4)' : 'rgba(180,190,254,0.25)';
+  ctx.lineWidth = w;
+  ctx.beginPath();
+  const s0 = worldToScreen(sw.points[0].x, sw.points[0].y);
+  ctx.moveTo(s0.x, s0.y);
+  for (let i = 1; i < sw.points.length; i++) {
+    const s = worldToScreen(sw.points[i].x, sw.points[i].y);
+    ctx.lineTo(s.x, s.y);
+  }
+  ctx.stroke();
+
+  // Center line
+  ctx.strokeStyle = sel ? '#f5c2e7' : '#b4befe';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 4]);
+  ctx.beginPath();
+  ctx.moveTo(s0.x, s0.y);
+  for (let i = 1; i < sw.points.length; i++) {
+    const s = worldToScreen(sw.points[i].x, sw.points[i].y);
+    ctx.lineTo(s.x, s.y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawElevPoint(ep, sel) {
+  const sc = worldToScreen(ep.x, ep.y);
+  const r = sel ? 7 : 5;
+  const color = elevColor(ep.elev);
+
+  ctx.beginPath();
+  ctx.arc(sc.x, sc.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = sel ? '#f5c2e7' : 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = sel ? 2 : 1;
+  ctx.stroke();
+
+  ctx.fillStyle = '#cdd6f4';
+  ctx.font = `${Math.max(9, 10 * cam.zoom)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(`EL${ep.elev >= 0 ? '+' : ''}${ep.elev.toFixed(1)}`, sc.x, sc.y - r - 3);
+}
+
+function drawElevationOverlay() {
+  if (project.elevPoints.length < 3) return;
+  // Simple IDW interpolation overlay
+  const step = Math.max(4, Math.round(8 / cam.zoom));
+  for (let sx = 0; sx < canvas.width; sx += step) {
+    for (let sy = 0; sy < canvas.height; sy += step) {
+      const w = screenToWorld(sx, sy);
+      const elev = interpolateElev(w.x, w.y);
+      if (elev !== null) {
+        ctx.fillStyle = elevColor(elev) + '40'; // with alpha
+        ctx.fillRect(sx, sy, step, step);
+      }
+    }
+  }
+}
+
+function interpolateElev(wx, wy) {
+  if (project.elevPoints.length === 0) return null;
+  let sumW = 0, sumE = 0;
+  for (const ep of project.elevPoints) {
+    const d = Math.max(0.5, dist({ x: wx, y: wy }, ep));
+    const weight = 1 / (d * d);
+    sumW += weight;
+    sumE += weight * ep.elev;
+  }
+  return sumE / sumW;
+}
+
+function elevColor(e) {
+  // Blue (low) -> Green (mid) -> Red (high)
+  const t = Math.max(0, Math.min(1, (e + 5) / 10)); // -5 to +5
+  const r = Math.round(t < 0.5 ? 0 : (t - 0.5) * 2 * 255);
+  const g = Math.round(t < 0.5 ? t * 2 * 255 : (1 - t) * 2 * 255);
+  const b = Math.round(t < 0.5 ? (1 - t * 2) * 255 : 0);
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawDimensions() {
+  ctx.fillStyle = 'rgba(205,214,244,0.4)';
+  ctx.font = `${Math.max(8, 9 * cam.zoom)}px sans-serif`;
+  ctx.textAlign = 'center';
+
+  // Road lengths
+  project.roads.forEach(rd => {
+    const m = { x: (rd.p1.x + rd.p2.x) / 2, y: (rd.p1.y + rd.p2.y) / 2 };
+    const sc = worldToScreen(m.x, m.y);
+    const len = dist(rd.p1, rd.p2);
+    ctx.fillText(`${len.toFixed(1)}m`, sc.x, sc.y - 8);
+    ctx.fillText(`W=${rd.width}m`, sc.x, sc.y + 10);
+  });
+
+  // Site edge lengths
+  if (project.site.length >= 2) {
+    for (let i = 0; i < project.site.length; i++) {
+      const a = project.site[i];
+      const b = project.site[(i + 1) % project.site.length];
+      const m = worldToScreen((a.x + b.x) / 2, (a.y + b.y) / 2);
+      const d = dist(a, b);
+      ctx.fillText(`${d.toFixed(1)}m`, m.x, m.y - 6);
+    }
+  }
+}
+
+function drawPreview() {
+  const snapped = snap(mouseWorld);
+
+  if (drawing?.tool === 'site' && drawing.points.length > 0) {
+    ctx.beginPath();
+    const s0 = worldToScreen(drawing.points[0].x, drawing.points[0].y);
+    ctx.moveTo(s0.x, s0.y);
+    for (let i = 1; i < drawing.points.length; i++) {
+      const s = worldToScreen(drawing.points[i].x, drawing.points[i].y);
+      ctx.lineTo(s.x, s.y);
+    }
+    const sm = worldToScreen(snapped.x, snapped.y);
+    ctx.lineTo(sm.x, sm.y);
+    ctx.strokeStyle = '#b4befe';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    drawing.points.forEach(p => {
+      const s = worldToScreen(p.x, p.y);
+      ctx.fillStyle = '#b4befe';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  if (drawing?.tool === 'road' && drawing.p1) {
+    const s1 = worldToScreen(drawing.p1.x, drawing.p1.y);
+    const sm = worldToScreen(snapped.x, snapped.y);
+    ctx.strokeStyle = '#89b4fa';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(s1.x, s1.y);
+    ctx.lineTo(sm.x, sm.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  if (drawing?.tool === 'sidewalk' && drawing.points.length > 0) {
+    ctx.beginPath();
+    const s0 = worldToScreen(drawing.points[0].x, drawing.points[0].y);
+    ctx.moveTo(s0.x, s0.y);
+    for (let i = 1; i < drawing.points.length; i++) {
+      const s = worldToScreen(drawing.points[i].x, drawing.points[i].y);
+      ctx.lineTo(s.x, s.y);
+    }
+    const sm = worldToScreen(snapped.x, snapped.y);
+    ctx.lineTo(sm.x, sm.y);
+    ctx.strokeStyle = '#b4befe';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Rotary preview
+  if (tool === 'rotary') {
+    const sc = worldToScreen(snapped.x, snapped.y);
+    const outerR = parseFloat(document.getElementById('rotaryOuterR').value) * PPM * cam.zoom;
+    const innerR = parseFloat(document.getElementById('rotaryInnerR').value) * PPM * cam.zoom;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(137,180,250,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(sc.x, sc.y, outerR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(sc.x, sc.y, innerR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Zone preview
+  if (['bus', 'taxi', 'car'].includes(tool)) {
+    const sc = worldToScreen(snapped.x, snapped.y);
+    const bLen = parseFloat(document.getElementById('berthLen').value) || 12;
+    const bW = parseFloat(document.getElementById('berthW').value) || 3;
+    const bCount = parseInt(document.getElementById('berthCount').value) || 3;
+    const w = bLen * bCount * PPM * cam.zoom;
+    const h = bW * PPM * cam.zoom;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(137,180,250,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sc.x, sc.y, w, h);
+    ctx.setLineDash([]);
+  }
+
+  // Elevation brush preview
+  if (tool === 'elevation') {
+    const sc = worldToScreen(snapped.x, snapped.y);
+    const r = parseFloat(document.getElementById('elevBrush').value) * PPM * cam.zoom / 2;
+    ctx.beginPath();
+    ctx.arc(sc.x, sc.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(249,226,175,0.4)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+// ==================== SITE INFO ====================
+function updateSiteInfo() {
+  if (project.site.length < 3) {
+    document.getElementById('siteArea').textContent = '-';
+    document.getElementById('sitePerimeter').textContent = '-';
+    return;
+  }
+  const area = Math.abs(polygonArea(project.site));
+  let perim = 0;
+  for (let i = 0; i < project.site.length; i++) {
+    perim += dist(project.site[i], project.site[(i + 1) % project.site.length]);
+  }
+  document.getElementById('siteArea').textContent = `${area.toFixed(0)} m²`;
+  document.getElementById('sitePerimeter').textContent = `${perim.toFixed(1)} m`;
+}
+
+// ==================== ELEVATION OVERLAY ====================
+function toggleElevOverlay() {
+  const show = document.getElementById('showElev').checked;
+  document.getElementById('elevLegend').style.display = show ? 'block' : 'none';
+  if (show) drawElevGradient();
+  draw();
+}
+
+function drawElevGradient() {
+  const gc = document.getElementById('elevGrad').getContext('2d');
+  for (let y = 0; y < 100; y++) {
+    const e = 5 - (y / 100) * 10;
+    gc.fillStyle = elevColor(e);
+    gc.fillRect(0, y, 20, 1);
+  }
+}
+
+// ==================== SIMULATION ====================
+function startSimulation() {
+  if (simRunning) {
+    stopSimulation();
+    return;
+  }
+
+  // Need at least a rotary to simulate
+  if (project.rotaries.length === 0) {
+    alert('シミュレーションにはロータリーが必要です。先にロータリーを配置してください。');
+    return;
+  }
+
+  simRunning = true;
+  document.getElementById('simBtn').textContent = '⏹ 停止';
+  document.getElementById('simStatus').textContent = '🔄 シミュレーション実行中...';
+
+  const nBus = parseInt(document.getElementById('simBus').value) || 0;
+  const nTaxi = parseInt(document.getElementById('simTaxi').value) || 0;
+  const nCar = parseInt(document.getElementById('simCar').value) || 0;
+  const speed = parseFloat(document.getElementById('simSpeed').value) || 20;
+
+  simVehicles = [];
+  const rot = project.rotaries[0];
+
+  // Create vehicles on the rotary
+  const total = nBus + nTaxi + nCar;
+  for (let i = 0; i < total; i++) {
+    let type, color, size;
+    if (i < nBus) { type = 'bus'; color = '#74c7ec'; size = 4; }
+    else if (i < nBus + nTaxi) { type = 'taxi'; color = '#f9e2af'; size = 2.5; }
+    else { type = 'car'; color = '#a6e3a1'; size = 2.5; }
+
+    const angle = (i / total) * Math.PI * 2 + Math.random() * 0.3;
+    const r = rot.innerR + (rot.outerR - rot.innerR) * (0.3 + Math.random() * 0.4);
+    const baseSpeed = (speed / 3.6) * (0.8 + Math.random() * 0.4); // m/s with variation
+
+    simVehicles.push({
+      type, color, size,
+      angle,
+      r,
+      angularSpeed: baseSpeed / r, // rad/s
+      cx: rot.cx, cy: rot.cy,
+      state: 'circling', // circling, exiting, stopped, entering
+      timer: 0,
+      stopTarget: null,
+    });
+  }
+
+  // Assign stops to matching zones
+  simVehicles.forEach(v => {
+    const matchZones = project.zones.filter(z => z.type === v.type);
+    if (matchZones.length > 0 && Math.random() < 0.5) {
+      v.stopTarget = matchZones[Math.floor(Math.random() * matchZones.length)];
+      v.timer = 60 + Math.random() * 180; // time before stopping
+    }
+  });
+
+  simLoop();
+}
+
+function stopSimulation() {
+  simRunning = false;
+  if (simAnimId) cancelAnimationFrame(simAnimId);
+  simVehicles = [];
+  document.getElementById('simBtn').textContent = '▶ シミュレーション';
+  document.getElementById('simStatus').textContent = '';
+  draw();
+}
+
+let lastSimTime = 0;
+function simLoop(ts) {
+  if (!simRunning) return;
+  if (!lastSimTime) lastSimTime = ts;
+  const dt = Math.min((ts - lastSimTime) / 1000, 0.05);
+  lastSimTime = ts;
+
+  simVehicles.forEach(v => {
+    if (v.state === 'circling') {
+      v.angle += v.angularSpeed * dt;
+      if (v.angle > Math.PI * 2) v.angle -= Math.PI * 2;
+
+      // Check if should stop
+      if (v.stopTarget && v.timer > 0) {
+        v.timer -= dt * 60;
+        if (v.timer <= 0) {
+          v.state = 'stopped';
+          v.timer = 120 + Math.random() * 180; // stop duration
+        }
+      }
+    } else if (v.state === 'stopped') {
+      v.timer -= dt * 60;
+      if (v.timer <= 0) {
+        v.state = 'circling';
+        v.timer = 60 + Math.random() * 240;
+        v.stopTarget = null;
+        // Maybe assign new stop
+        const matchZones = project.zones.filter(z => z.type === v.type);
+        if (matchZones.length > 0 && Math.random() < 0.4) {
+          v.stopTarget = matchZones[Math.floor(Math.random() * matchZones.length)];
+        }
+      }
+    }
+  });
+
+  draw();
+  simAnimId = requestAnimationFrame(simLoop);
+}
+
+function drawSimVehicles() {
+  simVehicles.forEach(v => {
+    let wx, wy, angle;
+    if (v.state === 'circling') {
+      wx = v.cx + Math.cos(v.angle) * v.r;
+      wy = v.cy + Math.sin(v.angle) * v.r;
+      angle = v.angle + Math.PI / 2;
+    } else if (v.state === 'stopped' && v.stopTarget) {
+      const z = v.stopTarget;
+      wx = z.x + z.w / 2;
+      wy = z.y + z.h / 2;
+      angle = z.angle * Math.PI / 180;
+    } else {
+      wx = v.cx + Math.cos(v.angle) * v.r;
+      wy = v.cy + Math.sin(v.angle) * v.r;
+      angle = v.angle + Math.PI / 2;
+    }
+
+    const sc = worldToScreen(wx, wy);
+    const s = v.size * PPM * cam.zoom;
+
+    ctx.save();
+    ctx.translate(sc.x, sc.y);
+    ctx.rotate(angle);
+
+    ctx.fillStyle = v.color;
+    ctx.shadowColor = v.color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.roundRect(-s, -s / 2, s * 2, s, 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Windshield
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(s * 0.4, -s / 2 + 1, s * 0.4, s - 2);
+
+    ctx.restore();
+  });
+}
+
+// ==================== GEOMETRY HELPERS ====================
+function dist(a, b) {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
+
+function polygonArea(pts) {
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    area += pts[i].x * pts[j].y;
+    area -= pts[j].x * pts[i].y;
+  }
+  return area / 2;
+}
+
+function pointInPolygon(p, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    if ((yi > p.y) !== (yj > p.y) && p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function pointInRect(p, z) {
+  // Simple AABB for angle=0 (for simplicity)
+  const cos = Math.cos(-z.angle * Math.PI / 180);
+  const sin = Math.sin(-z.angle * Math.PI / 180);
+  const dx = p.x - z.x;
+  const dy = p.y - z.y;
+  const lx = cos * dx - sin * dy;
+  const ly = sin * dx + cos * dy;
+  return lx >= 0 && lx <= z.w && ly >= 0 && ly <= z.h;
+}
+
+function pointNearLine(p, a, b, threshold) {
+  const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+  if (len2 === 0) return dist(p, a) < threshold;
+  let t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const proj = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+  return dist(p, proj) < threshold;
+}
+
+// ==================== SAVE / LOAD ====================
+function exportProject() {
+  const data = JSON.stringify(project, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'station-plaza-project.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importProject(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      project = JSON.parse(ev.target.result);
+      selected = null;
+      updateSiteInfo();
+      draw();
+    } catch (err) {
+      alert('ファイルの読み込みに失敗しました: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+function clearAll() {
+  if (!confirm('全ての要素を削除します。よろしいですか？')) return;
+  saveUndo();
+  project = { site: [], roads: [], rotaries: [], zones: [], sidewalks: [], elevPoints: [] };
+  selected = null;
+  showPropPanel();
+  updateSiteInfo();
+  draw();
+}
+
+// ==================== ELEVATION MODAL ====================
+let pendingElevPoint = null;
+
+function closeElevModal() {
+  document.getElementById('elevModal').classList.remove('show');
+  pendingElevPoint = null;
+}
+
+function confirmElevModal() {
+  if (pendingElevPoint) {
+    pendingElevPoint.elev = parseFloat(document.getElementById('elevModalVal').value);
+    project.elevPoints.push(pendingElevPoint);
+    draw();
+  }
+  closeElevModal();
+}
+
+// ==================== ROUNDRECT POLYFILL ====================
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+    if (typeof r === 'number') r = [r, r, r, r];
+    this.moveTo(x + r[0], y);
+    this.lineTo(x + w - r[1], y);
+    this.quadraticCurveTo(x + w, y, x + w, y + r[1]);
+    this.lineTo(x + w, y + h - r[2]);
+    this.quadraticCurveTo(x + w, y + h, x + w - r[2], y + h);
+    this.lineTo(x + r[3], y + h);
+    this.quadraticCurveTo(x, y + h, x, y + h - r[3]);
+    this.lineTo(x, y + r[0]);
+    this.quadraticCurveTo(x, y, x + r[0], y);
+    this.closePath();
+  };
+}
+
+// ==================== START ====================
+init();
+</script>
+</body>
+</html>
