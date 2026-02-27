@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工事現場をじっと見つめるサイト</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    overflow: hidden;
+    font-family: monospace;
+    image-rendering: pixelated;
+    cursor: default;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    color: #e0d8b0;
+    font-size: 14px;
+    font-family: monospace;
+    text-shadow: 2px 2px 0 #000;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #title {
+    font-size: 20px;
+    margin-bottom: 4px;
+    color: #f0c860;
+    letter-spacing: 2px;
+  }
+  #subtitle {
+    font-size: 11px;
+    color: #a0a080;
+  }
+  #stats {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    color: #a0a080;
+    font-size: 11px;
+    font-family: monospace;
+    text-shadow: 1px 1px 0 #000;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #controls {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    color: #a0a080;
+    font-size: 11px;
+    font-family: monospace;
+    text-shadow: 1px 1px 0 #000;
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+  }
+  .btn {
+    background: #2a2a3e;
+    border: 2px solid #4a4a5e;
+    color: #e0d8b0;
+    padding: 6px 14px;
+    font-family: monospace;
+    font-size: 12px;
+    cursor: pointer;
+    letter-spacing: 1px;
+  }
+  .btn:hover { background: #3a3a5e; border-color: #f0c860; color: #f0c860; }
+  .btn:active { transform: translate(1px, 1px); }
+  #day-night {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    font-size: 11px;
+    font-family: monospace;
+    color: #a0a080;
+    text-shadow: 1px 1px 0 #000;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="ui">
+  <div id="title">&#x1F6A7; 工事現場 &#x1F6A7;</div>
+  <div id="subtitle">じっと見つめて楽しむサイト</div>
+</div>
+<div id="day-night"></div>
+<div id="stats"></div>
+<div id="controls">
+  <button class="btn" id="btnSpeed">速度: 1x</button>
+  <button class="btn" id="btnReset">リセット</button>
+</div>
+<canvas id="c"></canvas>
+
+<script>
+// ============================================================
+// 工事現場をじっと見つめるサイト
+// Isometric 16-bit style construction site viewer
+// ============================================================
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// --- Configuration ---
+const TILE_W = 32;
+const TILE_H = 16;
+const GRID_SIZE = 20;
+const SPEEDS = [1, 2, 4];
+let speedIdx = 0;
+let gameSpeed = SPEEDS[0];
+let cameraX = 0;
+let cameraY = 0;
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let camStartX = 0;
+let camStartY = 0;
+
+// --- Color Palette (16-bit inspired) ---
+const PAL = {
+  sky:        ['#3b6e8f', '#2a4a6b', '#1a2a4a', '#0e1a30'],
+  ground:     '#7a8b5a',
+  groundDark: '#6a7b4a',
+  dirt:       '#8b7355',
+  dirtDark:   '#6b5335',
+  road:       '#4a4a4a',
+  roadLine:   '#c8c850',
+  concrete:   '#9a9a8a',
+  concDark:   '#7a7a6a',
+  steel:      '#8899aa',
+  steelDark:  '#667788',
+  brick:      '#b06040',
+  brickDark:  '#904830',
+  wood:       '#b89060',
+  woodDark:   '#987040',
+  crane:      '#e0c040',
+  craneDark:  '#b09030',
+  worker1:    '#e06030',
+  worker2:    '#3080d0',
+  worker3:    '#40b040',
+  helmet:     '#f0e040',
+  helmetW:    '#f0f0f0',
+  skin:       '#e0b888',
+  window:     '#80c8e8',
+  windowDark: '#5098b8',
+  shadow:     'rgba(0,0,0,0.2)',
+  smoke:      'rgba(180,180,180,0.5)',
+  dust:       'rgba(160,140,100,0.4)',
+  warning:    '#e04040',
+  cone:       '#e07020',
+};
+
+// --- Resize ---
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --- Isometric helpers ---
+function toScreen(x, y, z) {
+  const sx = (x - y) * (TILE_W / 2) + cameraX + canvas.width / 2;
+  const sy = (x + y) * (TILE_H / 2) - z * TILE_H + cameraY + canvas.height / 2 - 100;
+  return [sx, sy];
+}
+
+function drawDiamond(x, y, z, w, h, color) {
+  const [sx, sy] = toScreen(x, y, z);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - h/2);
+  ctx.lineTo(sx + w/2, sy);
+  ctx.lineTo(sx, sy + h/2);
+  ctx.lineTo(sx - w/2, sy);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawBlock(x, y, z, w, h, d, topColor, leftColor, rightColor) {
+  const [sx, sy] = toScreen(x, y, z);
+  const tw = TILE_W / 2;
+  const th = TILE_H / 2;
+  const blockH = d * TILE_H;
+
+  // Top face
+  ctx.fillStyle = topColor;
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - blockH);
+  ctx.lineTo(sx + w * tw, sy + w * th - blockH);
+  ctx.lineTo(sx + (w - h) * tw, sy + (w + h) * th - blockH);
+  ctx.lineTo(sx - h * tw, sy + h * th - blockH);
+  ctx.closePath();
+  ctx.fill();
+
+  // Left face
+  ctx.fillStyle = leftColor;
+  ctx.beginPath();
+  ctx.moveTo(sx - h * tw, sy + h * th - blockH);
+  ctx.lineTo(sx + (w - h) * tw, sy + (w + h) * th - blockH);
+  ctx.lineTo(sx + (w - h) * tw, sy + (w + h) * th);
+  ctx.lineTo(sx - h * tw, sy + h * th);
+  ctx.closePath();
+  ctx.fill();
+
+  // Right face
+  ctx.fillStyle = rightColor;
+  ctx.beginPath();
+  ctx.moveTo(sx + w * tw, sy + w * th - blockH);
+  ctx.lineTo(sx + (w - h) * tw, sy + (w + h) * th - blockH);
+  ctx.lineTo(sx + (w - h) * tw, sy + (w + h) * th);
+  ctx.lineTo(sx + w * tw, sy + w * th);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// --- World state ---
+let time = 0;
+let dayTime = 0;
+
+const buildings = [];
+const workers = [];
+const trucks = [];
+const cranes = [];
+const particles = [];
+const roads = [];
+const cones = [];
+const piles = [];
+
+function initWorld() {
+  buildings.length = 0;
+  workers.length = 0;
+  trucks.length = 0;
+  cranes.length = 0;
+  particles.length = 0;
+  roads.length = 0;
+  cones.length = 0;
+  piles.length = 0;
+  time = 0;
+  dayTime = 0;
+
+  // Roads
+  for (let i = 0; i < GRID_SIZE; i++) {
+    roads.push({ x: i, y: 9, built: 0 });
+    roads.push({ x: i, y: 10, built: 0 });
+  }
+  for (let i = 0; i < GRID_SIZE; i++) {
+    roads.push({ x: 9, y: i, built: 0 });
+    roads.push({ x: 10, y: i, built: 0 });
+  }
+
+  // Buildings
+  buildings.push({
+    x: 2, y: 2, w: 3, h: 3, maxFloors: 6,
+    floors: 0, progress: 0, type: 'brick', windows: true
+  });
+  buildings.push({
+    x: 2, y: 13, w: 4, h: 3, maxFloors: 4,
+    floors: 0, progress: 0, type: 'concrete', windows: true
+  });
+  buildings.push({
+    x: 12, y: 2, w: 3, h: 4, maxFloors: 8,
+    floors: 0, progress: 0, type: 'steel', windows: true
+  });
+  buildings.push({
+    x: 13, y: 13, w: 3, h: 3, maxFloors: 5,
+    floors: 0, progress: 0, type: 'wood', windows: false
+  });
+  buildings.push({
+    x: 12, y: 7, w: 2, h: 2, maxFloors: 3,
+    floors: 0, progress: 0, type: 'brick', windows: true
+  });
+
+  // Cranes
+  cranes.push({ x: 5, y: 5, angle: 0, height: 10, targetBuilding: 0 });
+  cranes.push({ x: 15, y: 5, angle: Math.PI, height: 12, targetBuilding: 2 });
+  cranes.push({ x: 5, y: 15, angle: Math.PI / 2, height: 8, targetBuilding: 1 });
+
+  // Workers
+  for (let i = 0; i < 15; i++) {
+    workers.push({
+      x: 3 + Math.random() * 14,
+      y: 3 + Math.random() * 14,
+      targetX: 0, targetY: 0,
+      speed: 0.01 + Math.random() * 0.015,
+      color: [PAL.worker1, PAL.worker2, PAL.worker3][Math.floor(Math.random() * 3)],
+      helmet: Math.random() > 0.3 ? PAL.helmet : PAL.helmetW,
+      state: 'idle',
+      stateTimer: 0,
+      frame: 0,
+      carrying: false,
+    });
+    pickNewTarget(workers[workers.length - 1]);
+  }
+
+  // Trucks
+  trucks.push({ x: -2, y: 9.5, dx: 0.02, dy: 0, route: 'h', progress: 0, loaded: true, color: '#d05030' });
+  trucks.push({ x: 9.5, y: -2, dx: 0, dy: 0.02, route: 'v', progress: 0, loaded: true, color: '#3060b0' });
+  trucks.push({ x: 22, y: 9.5, dx: -0.02, dy: 0, route: 'h2', progress: 0, loaded: false, color: '#d0a030' });
+
+  // Cones
+  const conePositions = [
+    [8, 8], [11, 8], [8, 11], [11, 11],
+    [8, 9], [8, 10], [11, 9], [11, 10],
+    [9, 8], [10, 8], [9, 11], [10, 11],
+  ];
+  conePositions.forEach(([cx, cy]) => {
+    cones.push({ x: cx, y: cy });
+  });
+
+  // Material piles
+  piles.push({ x: 6, y: 3, type: 'gravel', size: 0.8 });
+  piles.push({ x: 7, y: 14, type: 'sand', size: 1.0 });
+  piles.push({ x: 16, y: 6, type: 'bricks', size: 0.6 });
+  piles.push({ x: 1, y: 7, type: 'pipes', size: 0.7 });
+  piles.push({ x: 17, y: 14, type: 'gravel', size: 0.5 });
+}
+
+function pickNewTarget(w) {
+  const areas = [
+    { x: 3 + Math.random() * 4, y: 3 + Math.random() * 4 },
+    { x: 13 + Math.random() * 4, y: 3 + Math.random() * 4 },
+    { x: 3 + Math.random() * 4, y: 13 + Math.random() * 4 },
+    { x: 13 + Math.random() * 4, y: 13 + Math.random() * 4 },
+    { x: 6 + Math.random() * 2, y: 3 + Math.random() * 2 },
+    { x: 16 + Math.random() * 2, y: 6 + Math.random() * 2 },
+  ];
+  const t = areas[Math.floor(Math.random() * areas.length)];
+  w.targetX = t.x;
+  w.targetY = t.y;
+  w.state = 'walking';
+  w.stateTimer = 0;
+}
+
+// --- Update ---
+function update(dt) {
+  const spd = dt * gameSpeed;
+  time += spd;
+  dayTime = (time * 0.001) % 1;
+
+  // Update roads
+  roads.forEach(r => {
+    if (r.built < 1) {
+      r.built = Math.min(1, r.built + spd * 0.0003);
+    }
+  });
+
+  // Update buildings
+  buildings.forEach(b => {
+    if (b.floors < b.maxFloors) {
+      b.progress += spd * 0.00015;
+      if (b.progress >= 1) {
+        b.progress = 0;
+        b.floors++;
+        // Dust particles
+        for (let i = 0; i < 5; i++) {
+          particles.push({
+            x: b.x + Math.random() * b.w,
+            y: b.y + Math.random() * b.h,
+            z: b.floors * 0.8,
+            vx: (Math.random() - 0.5) * 0.01,
+            vy: (Math.random() - 0.5) * 0.01,
+            vz: 0.005 + Math.random() * 0.005,
+            life: 1,
+            type: 'dust',
+          });
+        }
+      }
+    }
+  });
+
+  // Update cranes
+  cranes.forEach(cr => {
+    cr.angle += spd * 0.0005;
+  });
+
+  // Update workers
+  workers.forEach(w => {
+    w.frame += spd * 0.005;
+    w.stateTimer += spd;
+
+    if (w.state === 'walking') {
+      const dx = w.targetX - w.x;
+      const dy = w.targetY - w.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 0.2) {
+        w.state = 'working';
+        w.stateTimer = 0;
+        w.carrying = false;
+      } else {
+        w.x += (dx / dist) * w.speed * spd;
+        w.y += (dy / dist) * w.speed * spd;
+      }
+    } else if (w.state === 'working') {
+      if (w.stateTimer > 2000 + Math.random() * 3000) {
+        w.carrying = Math.random() > 0.5;
+        pickNewTarget(w);
+      }
+      // Occasional sparks
+      if (Math.random() < 0.002 * spd) {
+        particles.push({
+          x: w.x, y: w.y, z: 0.5,
+          vx: (Math.random() - 0.5) * 0.02,
+          vy: (Math.random() - 0.5) * 0.02,
+          vz: 0.01 + Math.random() * 0.02,
+          life: 1,
+          type: 'spark',
+        });
+      }
+    } else {
+      if (w.stateTimer > 1000) {
+        pickNewTarget(w);
+      }
+    }
+  });
+
+  // Update trucks
+  trucks.forEach(t => {
+    t.progress += spd;
+    if (t.route === 'h') {
+      t.x += t.dx * spd;
+      if (t.x > GRID_SIZE + 3) { t.x = -3; t.loaded = !t.loaded; }
+    } else if (t.route === 'h2') {
+      t.x += t.dx * spd;
+      if (t.x < -3) { t.x = GRID_SIZE + 3; t.loaded = !t.loaded; }
+    } else {
+      t.y += t.dy * spd;
+      if (t.y > GRID_SIZE + 3) { t.y = -3; t.loaded = !t.loaded; }
+    }
+    // Exhaust
+    if (Math.random() < 0.03 * spd) {
+      particles.push({
+        x: t.x - (t.dx > 0 ? 0.5 : -0.5),
+        y: t.y - (t.dy > 0 ? 0.5 : -0.5),
+        z: 0.6,
+        vx: (Math.random() - 0.5) * 0.003,
+        vy: (Math.random() - 0.5) * 0.003,
+        vz: 0.008,
+        life: 1,
+        type: 'smoke',
+      });
+    }
+  });
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * spd;
+    p.y += p.vy * spd;
+    p.z += p.vz * spd;
+    p.life -= spd * 0.002;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+// --- Draw functions ---
+function drawGround() {
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      const isRoad = roads.some(r => r.x === x && r.y === y && r.built > 0.5);
+      if (isRoad) {
+        const r = roads.find(rd => rd.x === x && rd.y === y);
+        const builtAlpha = Math.min(1, r.built * 2 - 0.5);
+        drawDiamond(x, y, 0, TILE_W, TILE_H, PAL.dirt);
+        if (builtAlpha > 0) {
+          ctx.globalAlpha = builtAlpha;
+          drawDiamond(x, y, 0, TILE_W, TILE_H, PAL.road);
+          ctx.globalAlpha = 1;
+        }
+      } else {
+        const c = (x + y) % 2 === 0 ? PAL.ground : PAL.groundDark;
+        drawDiamond(x, y, 0, TILE_W, TILE_H, c);
+      }
+    }
+  }
+
+  // Road center lines
+  roads.forEach(r => {
+    if (r.built > 0.8) {
+      const [sx, sy] = toScreen(r.x, r.y, 0);
+      ctx.fillStyle = PAL.roadLine;
+      ctx.globalAlpha = 0.4;
+      ctx.fillRect(sx - 1, sy - 1, 2, 2);
+      ctx.globalAlpha = 1;
+    }
+  });
+}
+
+function drawBuildingFoundation(b) {
+  drawBlock(b.x, b.y, 0, b.w, b.h, 0.15,
+    PAL.concDark, PAL.concrete, PAL.concDark);
+}
+
+function drawBuildingFloors(b) {
+  const colors = {
+    brick:    [PAL.brick, PAL.brickDark, '#903828'],
+    concrete: [PAL.concrete, PAL.concDark, '#6a6a5a'],
+    steel:    [PAL.steel, PAL.steelDark, '#556678'],
+    wood:     [PAL.wood, PAL.woodDark, '#786030'],
+  };
+  const [top, left, right] = colors[b.type] || colors.concrete;
+
+  // Built floors
+  for (let f = 0; f < b.floors; f++) {
+    const z = 0.15 + f * 0.8;
+    drawBlock(b.x, b.y, z, b.w, b.h, 0.8, top, left, right);
+
+    // Windows
+    if (b.windows && f < b.floors) {
+      for (let wx = 0; wx < b.w; wx++) {
+        const [wsx, wsy] = toScreen(b.x + wx + 0.3, b.y - 0.01, z + 0.25);
+        ctx.fillStyle = PAL.window;
+        ctx.fillRect(wsx - 2, wsy - 3, 4, 4);
+
+        const [wsx2, wsy2] = toScreen(b.x + b.w + 0.01, b.y + wx + 0.3, z + 0.25);
+        ctx.fillStyle = PAL.windowDark;
+        ctx.fillRect(wsx2 - 2, wsy2 - 3, 4, 4);
+      }
+    }
+  }
+
+  // Current floor progress
+  if (b.floors < b.maxFloors && b.progress > 0) {
+    const z = 0.15 + b.floors * 0.8;
+    const partialH = b.progress * 0.8;
+    ctx.globalAlpha = 0.6 + b.progress * 0.4;
+    drawBlock(b.x, b.y, z, b.w, b.h, partialH, top, left, right);
+
+    // Scaffolding lines
+    ctx.globalAlpha = 0.5;
+    const [s1x, s1y] = toScreen(b.x, b.y, z + partialH);
+    const [s2x, s2y] = toScreen(b.x, b.y, z);
+    ctx.strokeStyle = PAL.woodDark;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(s1x, s1y);
+    ctx.lineTo(s2x, s2y);
+    ctx.stroke();
+    const [s3x, s3y] = toScreen(b.x + b.w, b.y, z + partialH);
+    const [s4x, s4y] = toScreen(b.x + b.w, b.y, z);
+    ctx.beginPath();
+    ctx.moveTo(s3x, s3y);
+    ctx.lineTo(s4x, s4y);
+    ctx.stroke();
+
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawCrane(cr) {
+  const baseZ = 0;
+  const [bx, by] = toScreen(cr.x, cr.y, baseZ);
+
+  // Base
+  drawBlock(cr.x - 0.3, cr.y - 0.3, 0, 0.6, 0.6, 0.3, PAL.craneDark, PAL.crane, PAL.craneDark);
+
+  // Tower
+  const towerH = cr.height;
+  for (let i = 0; i < towerH; i++) {
+    const [tx, ty] = toScreen(cr.x, cr.y, i * 0.8 + 0.3);
+    ctx.strokeStyle = PAL.crane;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(tx - 3, ty);
+    ctx.lineTo(tx + 3, ty);
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx, ty + TILE_H * 0.8);
+    ctx.stroke();
+
+    // Cross bracing
+    if (i % 2 === 0) {
+      ctx.strokeStyle = PAL.craneDark;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tx - 3, ty);
+      ctx.lineTo(tx + 3, ty + TILE_H * 0.6);
+      ctx.stroke();
+    }
+  }
+
+  // Arm
+  const armZ = towerH * 0.8 + 0.3;
+  const [topX, topY] = toScreen(cr.x, cr.y, armZ);
+  const armLen = 4;
+  const armEndX = cr.x + Math.cos(cr.angle) * armLen;
+  const armEndY = cr.y + Math.sin(cr.angle) * armLen;
+  const [aeX, aeY] = toScreen(armEndX, armEndY, armZ);
+
+  ctx.strokeStyle = PAL.crane;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(topX, topY);
+  ctx.lineTo(aeX, aeY);
+  ctx.stroke();
+
+  // Counter arm
+  const cArmEndX = cr.x - Math.cos(cr.angle) * 2;
+  const cArmEndY = cr.y - Math.sin(cr.angle) * 2;
+  const [caeX, caeY] = toScreen(cArmEndX, cArmEndY, armZ);
+  ctx.beginPath();
+  ctx.moveTo(topX, topY);
+  ctx.lineTo(caeX, caeY);
+  ctx.stroke();
+
+  // Counterweight
+  ctx.fillStyle = PAL.concDark;
+  ctx.fillRect(caeX - 4, caeY - 3, 8, 6);
+
+  // Cable
+  const cableZ = armZ - 2 - Math.sin(time * 0.0008) * 1;
+  const [cbX, cbY] = toScreen(armEndX, armEndY, cableZ);
+  ctx.strokeStyle = '#666';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(aeX, aeY);
+  ctx.lineTo(cbX, cbY);
+  ctx.stroke();
+
+  // Hook/load
+  ctx.fillStyle = PAL.craneDark;
+  ctx.fillRect(cbX - 3, cbY - 2, 6, 5);
+}
+
+function drawWorker(w) {
+  const z = 0.05;
+  const [sx, sy] = toScreen(w.x, w.y, z);
+  const bob = w.state === 'walking' ? Math.sin(w.frame * 2) * 1.5 : 0;
+  const workBob = w.state === 'working' ? Math.sin(w.frame * 3) * 1 : 0;
+
+  // Shadow
+  ctx.fillStyle = PAL.shadow;
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 2, 4, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body
+  ctx.fillStyle = w.color;
+  ctx.fillRect(sx - 3, sy - 8 + bob + workBob, 6, 6);
+
+  // Head
+  ctx.fillStyle = PAL.skin;
+  ctx.fillRect(sx - 2, sy - 12 + bob + workBob, 4, 4);
+
+  // Helmet
+  ctx.fillStyle = w.helmet;
+  ctx.fillRect(sx - 3, sy - 14 + bob + workBob, 6, 3);
+
+  // Legs (walking animation)
+  if (w.state === 'walking') {
+    const legOff = Math.sin(w.frame * 4) * 2;
+    ctx.fillStyle = '#405060';
+    ctx.fillRect(sx - 2, sy - 2, 2, 3 + legOff);
+    ctx.fillRect(sx, sy - 2, 2, 3 - legOff);
+  } else {
+    ctx.fillStyle = '#405060';
+    ctx.fillRect(sx - 2, sy - 2, 2, 3);
+    ctx.fillRect(sx + 1, sy - 2, 2, 3);
+  }
+
+  // Carrying item
+  if (w.carrying && w.state === 'walking') {
+    ctx.fillStyle = PAL.woodDark;
+    ctx.fillRect(sx + 3, sy - 10 + bob, 6, 2);
+  }
+
+  // Working animation (hammering)
+  if (w.state === 'working') {
+    const hammerAngle = Math.sin(w.frame * 6) * 0.5;
+    ctx.save();
+    ctx.translate(sx + 3, sy - 8 + workBob);
+    ctx.rotate(hammerAngle);
+    ctx.fillStyle = '#888';
+    ctx.fillRect(0, -6, 2, 6);
+    ctx.fillStyle = '#aaa';
+    ctx.fillRect(-1, -8, 4, 3);
+    ctx.restore();
+  }
+}
+
+function drawTruck(t) {
+  const z = 0.05;
+  const [sx, sy] = toScreen(t.x, t.y, z);
+  const bounce = Math.sin(time * 0.003 + t.progress) * 0.5;
+
+  // Shadow
+  ctx.fillStyle = PAL.shadow;
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 3, 10, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Truck bed
+  ctx.fillStyle = t.loaded ? PAL.dirt : '#555';
+  ctx.fillRect(sx - 8, sy - 8 + bounce, 12, 6);
+
+  // Load
+  if (t.loaded) {
+    ctx.fillStyle = PAL.dirtDark;
+    ctx.beginPath();
+    ctx.moveTo(sx - 8, sy - 8 + bounce);
+    ctx.lineTo(sx - 5, sy - 12 + bounce);
+    ctx.lineTo(sx + 2, sy - 12 + bounce);
+    ctx.lineTo(sx + 4, sy - 8 + bounce);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Cabin
+  ctx.fillStyle = t.color;
+  ctx.fillRect(sx + 4, sy - 10 + bounce, 8, 8);
+
+  // Windshield
+  ctx.fillStyle = PAL.window;
+  ctx.fillRect(sx + 5, sy - 9 + bounce, 6, 4);
+
+  // Wheels
+  ctx.fillStyle = '#222';
+  ctx.fillRect(sx - 6, sy - 1 + bounce, 4, 3);
+  ctx.fillRect(sx + 5, sy - 1 + bounce, 4, 3);
+}
+
+function drawCone(c) {
+  const [sx, sy] = toScreen(c.x + 0.5, c.y + 0.5, 0);
+  // Base
+  ctx.fillStyle = '#333';
+  ctx.fillRect(sx - 3, sy, 6, 2);
+  // Cone
+  ctx.fillStyle = PAL.cone;
+  ctx.beginPath();
+  ctx.moveTo(sx - 3, sy);
+  ctx.lineTo(sx, sy - 8);
+  ctx.lineTo(sx + 3, sy);
+  ctx.closePath();
+  ctx.fill();
+  // Stripe
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(sx - 2, sy - 4, 4, 2);
+}
+
+function drawPile(p) {
+  const [sx, sy] = toScreen(p.x + 0.5, p.y + 0.5, 0);
+  const s = p.size;
+  const colors = {
+    gravel: ['#888', '#777'],
+    sand:   ['#d8c878', '#b8a858'],
+    bricks: [PAL.brick, PAL.brickDark],
+    pipes:  ['#789', '#678'],
+  };
+  const [c1, c2] = colors[p.type] || colors.gravel;
+
+  ctx.fillStyle = c2;
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 2, 12 * s, 5 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = c1;
+  ctx.beginPath();
+  ctx.moveTo(sx - 10 * s, sy + 2);
+  ctx.quadraticCurveTo(sx, sy - 14 * s, sx + 10 * s, sy + 2);
+  ctx.closePath();
+  ctx.fill();
+
+  if (p.type === 'pipes') {
+    ctx.strokeStyle = '#567';
+    ctx.lineWidth = 2;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.arc(sx + i * 3 * s, sy - 2 * s, 2 * s, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawParticle(p) {
+  const [sx, sy] = toScreen(p.x, p.y, p.z);
+  ctx.globalAlpha = p.life;
+
+  if (p.type === 'dust') {
+    ctx.fillStyle = PAL.dust;
+    ctx.fillRect(sx - 2, sy - 2, 4, 4);
+  } else if (p.type === 'smoke') {
+    ctx.fillStyle = PAL.smoke;
+    const size = 3 + (1 - p.life) * 4;
+    ctx.beginPath();
+    ctx.arc(sx, sy, size, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (p.type === 'spark') {
+    ctx.fillStyle = '#f0d030';
+    ctx.fillRect(sx - 1, sy - 1, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawSky() {
+  // Day/night cycle: 0=noon, 0.5=midnight
+  const t = dayTime;
+  const brightness = Math.max(0, Math.cos(t * Math.PI * 2));
+  const idx = Math.min(3, Math.floor((1 - brightness) * 4));
+  const skyColor = PAL.sky[idx];
+
+  ctx.fillStyle = skyColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Stars at night
+  if (brightness < 0.3) {
+    ctx.fillStyle = `rgba(255,255,220,${(0.3 - brightness) * 2})`;
+    const seed = 42;
+    for (let i = 0; i < 50; i++) {
+      const sx = ((i * 7919 + seed) % canvas.width);
+      const sy = ((i * 6271 + seed) % (canvas.height * 0.6));
+      const twinkle = Math.sin(time * 0.002 + i * 1.7) * 0.5 + 0.5;
+      ctx.globalAlpha = twinkle * (0.3 - brightness) * 3;
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawDayNightIndicator() {
+  const t = dayTime;
+  const brightness = Math.max(0, Math.cos(t * Math.PI * 2));
+  let period;
+  if (brightness > 0.7) period = '☀ 昼間';
+  else if (brightness > 0.3) period = '🌅 夕方';
+  else period = '🌙 夜間';
+  document.getElementById('day-night').textContent = period;
+}
+
+function drawStats() {
+  const totalFloors = buildings.reduce((s, b) => s + b.floors, 0);
+  const maxFloors = buildings.reduce((s, b) => s + b.maxFloors, 0);
+  const roadsBuilt = roads.filter(r => r.built > 0.8).length;
+  const pct = Math.floor((totalFloors / maxFloors) * 100);
+  document.getElementById('stats').innerHTML =
+    `建物進捗: ${totalFloors}/${maxFloors}階 (${pct}%) | ` +
+    `道路: ${roadsBuilt}/${roads.length}区画 | ` +
+    `作業員: ${workers.length}人 | ` +
+    `車両: ${trucks.length}台`;
+}
+
+// --- Collect all drawables and sort by depth ---
+function collectDrawables() {
+  const items = [];
+
+  buildings.forEach((b, i) => {
+    items.push({ type: 'foundation', data: b, depth: b.x + b.y });
+    items.push({ type: 'building', data: b, depth: b.x + b.y + 0.1 });
+  });
+
+  cranes.forEach(cr => {
+    items.push({ type: 'crane', data: cr, depth: cr.x + cr.y + 0.2 });
+  });
+
+  workers.forEach(w => {
+    items.push({ type: 'worker', data: w, depth: w.x + w.y });
+  });
+
+  trucks.forEach(t => {
+    items.push({ type: 'truck', data: t, depth: t.x + t.y });
+  });
+
+  cones.forEach(c => {
+    items.push({ type: 'cone', data: c, depth: c.x + c.y });
+  });
+
+  piles.forEach(p => {
+    items.push({ type: 'pile', data: p, depth: p.x + p.y });
+  });
+
+  particles.forEach(p => {
+    items.push({ type: 'particle', data: p, depth: p.x + p.y + 100 });
+  });
+
+  items.sort((a, b) => a.depth - b.depth);
+  return items;
+}
+
+// --- Main render ---
+function render() {
+  drawSky();
+  drawGround();
+
+  const drawables = collectDrawables();
+  drawables.forEach(item => {
+    switch (item.type) {
+      case 'foundation': drawBuildingFoundation(item.data); break;
+      case 'building': drawBuildingFloors(item.data); break;
+      case 'crane': drawCrane(item.data); break;
+      case 'worker': drawWorker(item.data); break;
+      case 'truck': drawTruck(item.data); break;
+      case 'cone': drawCone(item.data); break;
+      case 'pile': drawPile(item.data); break;
+      case 'particle': drawParticle(item.data); break;
+    }
+  });
+
+  // Vignette overlay
+  const grad = ctx.createRadialGradient(
+    canvas.width / 2, canvas.height / 2, canvas.width * 0.3,
+    canvas.width / 2, canvas.height / 2, canvas.width * 0.8
+  );
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.3)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Scanline effect (subtle)
+  ctx.fillStyle = 'rgba(0,0,0,0.04)';
+  for (let y = 0; y < canvas.height; y += 3) {
+    ctx.fillRect(0, y, canvas.width, 1);
+  }
+
+  drawDayNightIndicator();
+  drawStats();
+}
+
+// --- Game loop ---
+let lastTime = 0;
+function gameLoop(timestamp) {
+  const dt = lastTime ? Math.min(timestamp - lastTime, 50) : 16;
+  lastTime = timestamp;
+
+  update(dt);
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+// --- Input handling ---
+canvas.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  dragStartX = e.clientX;
+  dragStartY = e.clientY;
+  camStartX = cameraX;
+  camStartY = cameraY;
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (isDragging) {
+    cameraX = camStartX + (e.clientX - dragStartX);
+    cameraY = camStartY + (e.clientY - dragStartY);
+  }
+});
+
+canvas.addEventListener('mouseup', () => { isDragging = false; });
+canvas.addEventListener('mouseleave', () => { isDragging = false; });
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  isDragging = true;
+  dragStartX = e.touches[0].clientX;
+  dragStartY = e.touches[0].clientY;
+  camStartX = cameraX;
+  camStartY = cameraY;
+  e.preventDefault();
+});
+
+canvas.addEventListener('touchmove', (e) => {
+  if (isDragging) {
+    cameraX = camStartX + (e.touches[0].clientX - dragStartX);
+    cameraY = camStartY + (e.touches[0].clientY - dragStartY);
+  }
+  e.preventDefault();
+});
+
+canvas.addEventListener('touchend', () => { isDragging = false; });
+
+// Buttons
+document.getElementById('btnSpeed').addEventListener('click', () => {
+  speedIdx = (speedIdx + 1) % SPEEDS.length;
+  gameSpeed = SPEEDS[speedIdx];
+  document.getElementById('btnSpeed').textContent = `速度: ${gameSpeed}x`;
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  initWorld();
+});
+
+// --- Init & start ---
+initWorld();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
