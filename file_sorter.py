@@ -212,6 +212,41 @@ def match_rule(comment: str, rules: list[dict]) -> dict | None:
     return None
 
 
+def match_comment_to_project(
+    comment: str, projects: list[str], subfolder_map: dict[str, list[str]],
+) -> dict | None:
+    """コメントにプロジェクト名やサブフォルダ名が含まれていれば直接マッチする。
+    完全一致を優先し、部分一致はフォルダ名が2文字以上の場合のみ。
+    """
+    if not comment.strip():
+        return None
+    comment_text = comment.strip()
+
+    # 完全一致（コメント全体がフォルダ名そのもの）
+    for p in projects:
+        if comment_text == p:
+            subs = subfolder_map.get(p, [])
+            return {"project": p, "subfolder": subs[0] if subs else ""}
+
+    # プロジェクト名の部分一致（2文字以上のフォルダ名）
+    # 長い名前を先にチェック（「ツール管理」が「ツール」より優先）
+    sorted_projects = sorted(projects, key=len, reverse=True)
+    for p in sorted_projects:
+        if len(p) >= 2 and p in comment_text:
+            # サブフォルダもコメントから探す
+            subs = subfolder_map.get(p, [])
+            matched_sub = ""
+            for s in sorted(subs, key=len, reverse=True):
+                if len(s) >= 2 and s in comment_text:
+                    matched_sub = s
+                    break
+            if not matched_sub and subs:
+                matched_sub = subs[0]
+            return {"project": p, "subfolder": matched_sub}
+
+    return None
+
+
 # ---------------------------------------------------------------------------
 # フォルダ構造スキャン
 # ---------------------------------------------------------------------------
@@ -303,12 +338,15 @@ def build_prompt(
 ## 既存フォルダ構造
 {folder_structure}
 
-## 分類ルール
-- projectには上記の既存プロジェクトフォルダのいずれか、または "unknown" を指定
-- subfolderには、そのプロジェクト内に実際に存在するサブフォルダ名を正確に指定すること
-  - 存在するサブフォルダ: {subfolder_list}
-- ユーザーからの補足コメントがある場合、それを最優先の判断材料として使うこと
-- 過去の分類パターンがある場合、同様のコメントには同じ分類先を使うこと
+## 分類ルール（優先度の高い順に適用すること）
+1. コメントに既存フォルダ名と一致・部分一致する語句があれば、そのフォルダを最優先で選ぶ
+   - 例: コメントが「ツール」でフォルダに「ツール」があれば → project は「ツール」
+   - 例: コメントが「○○の資料」でフォルダに「○○」があれば → project は「○○」
+2. コメントの内容（説明文）からファイルの用途を推測し、最も適切なフォルダを選ぶ
+3. 過去の分類パターンがある場合、同様のコメントには同じ分類先を使う
+4. projectには上記の既存プロジェクトフォルダのいずれか、または "unknown" を指定
+5. subfolderには、そのプロジェクト内に実際に存在するサブフォルダ名を正確に指定すること
+   - 存在するサブフォルダ: {subfolder_list}
 
 ## 回答形式（JSONのみ・余計な文字禁止）
 {{"project": "プロジェクト名またはunknown", "subfolder": "サブフォルダ名"}}"""
@@ -453,6 +491,12 @@ class SortWorker(QObject):
         # ルールマッチ判定（コメント全体で1回だけ判定）
         matched_rule = match_rule(self.user_comment, rules) if self.user_comment else None
 
+        # コメント → プロジェクト名の直接マッチ判定
+        comment_match = (
+            match_comment_to_project(self.user_comment, projects, subfolder_map)
+            if self.user_comment and not matched_rule else None
+        )
+
         for i, filepath in enumerate(self.files, 1):
             filename = Path(filepath).name
             self.status_signal.emit(f"処理中… ({i}/{total}) {filename}")
@@ -471,7 +515,21 @@ class SortWorker(QObject):
                 )
                 continue
 
-            # ルール不一致 → AI分類
+            # コメントにフォルダ名が含まれている → 直接振り分け
+            if comment_match:
+                self.log_signal.emit(
+                    f"📁 コメントからフォルダ名を検出: {filename} → {comment_match['project']}",
+                    self.t.accent_blue,
+                )
+                self._move_and_log(
+                    filepath,
+                    comment_match["project"],
+                    comment_match.get("subfolder", ""),
+                    projects, subfolder_map, "コメント直接",
+                )
+                continue
+
+            # ルール不一致・フォルダ名不一致 → AI分類
             self.log_signal.emit(f"🔍 AI分類中: {filename}", self.t.subtext)
 
             prompt = build_prompt(
