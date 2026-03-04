@@ -34,11 +34,16 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent, QPalette
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
+    QDialog,
     QFileDialog,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -51,14 +56,15 @@ from PySide6.QtWidgets import (
 # 定数
 # ---------------------------------------------------------------------------
 APP_NAME = "ファイル自動仕分けツール"
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.1.0"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "gemma3:4b"
 OLLAMA_TIMEOUT = 60
 UNKNOWN_DIR = "_未分類"
 
-# 分類履歴ファイル（整理先フォルダ直下に保存）
+# 整理先フォルダ直下に保存されるファイル
 HISTORY_FILE = "_分類履歴.json"
+RULES_FILE = "_分類ルール.json"
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +165,51 @@ def build_history_context(root: str) -> str:
             f"  コメント「{h['comment']}」→ {h['project']}/{h['subfolder']}"
         )
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# 分類ルール（キーワード → フォルダ マッピング）
+# ---------------------------------------------------------------------------
+
+def _rules_path(root: str) -> Path:
+    return Path(root) / RULES_FILE
+
+
+def load_rules(root: str) -> list[dict]:
+    """分類ルールを読み込む。
+    各ルール: {"keyword": "...", "project": "...", "subfolder": "..."}
+    """
+    rp = _rules_path(root)
+    if not rp.exists():
+        return []
+    try:
+        with open(rp, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def save_rules(root: str, rules: list[dict]):
+    """分類ルールを保存する。"""
+    rp = _rules_path(root)
+    try:
+        with open(rp, "w", encoding="utf-8") as f:
+            json.dump(rules, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def match_rule(comment: str, rules: list[dict]) -> dict | None:
+    """コメントに一致するルールを返す。キーワードが含まれていればマッチ。"""
+    if not comment.strip():
+        return None
+    comment_lower = comment.strip().lower()
+    for rule in rules:
+        keyword = rule.get("keyword", "").strip().lower()
+        if keyword and keyword in comment_lower:
+            return rule
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -356,16 +407,72 @@ class SortWorker(QObject):
         self.user_comment = user_comment
         self.t = theme or Theme()
 
+    def _move_and_log(self, filepath: str, project: str, subfolder: str,
+                      projects: list[str], subfolder_map: dict, method: str):
+        """分類結果をもとにファイルを移動しログ出力する共通処理。"""
+        filename = Path(filepath).name
+
+        if project == "unknown" or project not in projects:
+            dest_dir = str(Path(self.root_folder) / UNKNOWN_DIR)
+            moved = move_file(filepath, dest_dir)
+            moved_folder = Path(moved).parent.name
+            self.undo_record.emit(moved, filepath)
+            self.log_signal.emit(
+                f"⚠️ プロジェクト不明 → {UNKNOWN_DIR}/{moved_folder}/",
+                self.t.warn,
+            )
+            return
+
+        # サブフォルダのバリデーション
+        valid_subs = subfolder_map.get(project, [])
+        if subfolder not in valid_subs:
+            subfolder = valid_subs[0] if valid_subs else ""
+
+        if subfolder:
+            dest_dir = str(Path(self.root_folder) / project / subfolder)
+        else:
+            dest_dir = str(Path(self.root_folder) / project)
+
+        moved = move_file(filepath, dest_dir)
+        moved_folder = Path(moved).parent.name
+        self.undo_record.emit(moved, filepath)
+
+        display_path = f"{project}/{subfolder}/{moved_folder}/" if subfolder else f"{project}/{moved_folder}/"
+        self.log_signal.emit(
+            f"✅ {filename} → {display_path}  [{method}]", self.t.success,
+        )
+        self.history_record.emit(self.user_comment, project, subfolder)
+
     def run(self):
         projects = scan_projects(self.root_folder)
         subfolder_map = scan_all_subfolders(self.root_folder, projects)
         history_context = build_history_context(self.root_folder)
+        rules = load_rules(self.root_folder)
         total = len(self.files)
+
+        # ルールマッチ判定（コメント全体で1回だけ判定）
+        matched_rule = match_rule(self.user_comment, rules) if self.user_comment else None
 
         for i, filepath in enumerate(self.files, 1):
             filename = Path(filepath).name
             self.status_signal.emit(f"処理中… ({i}/{total}) {filename}")
-            self.log_signal.emit(f"🔍 分類中: {filename}", self.t.subtext)
+
+            # ルールにマッチ → AIスキップで即振り分け
+            if matched_rule:
+                self.log_signal.emit(
+                    f"⚡ ルール適用: {filename}（キーワード: {matched_rule['keyword']}）",
+                    self.t.accent_blue,
+                )
+                self._move_and_log(
+                    filepath,
+                    matched_rule.get("project", "unknown"),
+                    matched_rule.get("subfolder", ""),
+                    projects, subfolder_map, "ルール",
+                )
+                continue
+
+            # ルール不一致 → AI分類
+            self.log_signal.emit(f"🔍 AI分類中: {filename}", self.t.subtext)
 
             prompt = build_prompt(
                 filename, projects, subfolder_map,
@@ -384,44 +491,12 @@ class SortWorker(QObject):
                 )
                 continue
 
-            project = result.get("project", "unknown")
-            subfolder = result.get("subfolder", "")
-
-            if project == "unknown" or project not in projects:
-                dest_dir = str(Path(self.root_folder) / UNKNOWN_DIR)
-                moved = move_file(filepath, dest_dir)
-                moved_folder = Path(moved).parent.name
-                self.undo_record.emit(moved, filepath)
-                self.log_signal.emit(
-                    f"⚠️ プロジェクト不明 → {UNKNOWN_DIR}/{moved_folder}/",
-                    self.t.warn,
-                )
-                continue
-
-            # サブフォルダのバリデーション：実在するもののみ許可
-            valid_subs = subfolder_map.get(project, [])
-            if subfolder not in valid_subs:
-                # 最も近いサブフォルダを探す、なければ先頭、それもなければ直下
-                if valid_subs:
-                    subfolder = valid_subs[0]
-                else:
-                    subfolder = ""
-
-            if subfolder:
-                dest_dir = str(Path(self.root_folder) / project / subfolder)
-            else:
-                dest_dir = str(Path(self.root_folder) / project)
-
-            moved = move_file(filepath, dest_dir)
-            moved_folder = Path(moved).parent.name
-            self.undo_record.emit(moved, filepath)
-
-            display_path = f"{project}/{subfolder}/{moved_folder}/" if subfolder else f"{project}/{moved_folder}/"
-            self.log_signal.emit(
-                f"✅ {filename} → {display_path}", self.t.success,
+            self._move_and_log(
+                filepath,
+                result.get("project", "unknown"),
+                result.get("subfolder", ""),
+                projects, subfolder_map, "AI",
             )
-            # 履歴記録
-            self.history_record.emit(self.user_comment, project, subfolder)
 
         self.status_signal.emit("✅ 完了")
         self.finished.emit()
@@ -430,6 +505,197 @@ class SortWorker(QObject):
 # ---------------------------------------------------------------------------
 # UI コンポーネント
 # ---------------------------------------------------------------------------
+
+class RulesDialog(QDialog):
+    """分類ルール管理ダイアログ。
+    キーワード → プロジェクト/サブフォルダ のマッピングを登録・編集・削除。
+    """
+
+    def __init__(self, root_folder: str, theme: Theme, parent=None):
+        super().__init__(parent)
+        self.root_folder = root_folder
+        self.t = theme
+        self.setWindowTitle("分類ルール管理")
+        self.resize(560, 440)
+        self._rules = load_rules(root_folder)
+        self._init_ui()
+        self._apply_style()
+        self._refresh_list()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(18, 18, 18, 18)
+
+        # 説明
+        desc = QLabel(
+            "コメントに含まれるキーワードで、AIを使わず即座に振り分けます。\n"
+            '例: キーワード「ワークス」→ プロジェクトA / 協力者受領資料'
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet(f"color: {self.t.subtext}; font-size: 12px;")
+        layout.addWidget(desc)
+
+        # ルール一覧
+        self._list = QListWidget()
+        self._list.setStyleSheet(
+            f"QListWidget {{ background: {self.t.panel}; color: {self.t.text}; "
+            f"border: 1px solid {self.t.border}; border-radius: 8px; "
+            f"padding: 4px; font-size: 12px; }}"
+            f"QListWidget::item {{ padding: 6px 8px; border-radius: 4px; }}"
+            f"QListWidget::item:selected {{ background: {self.t.accent_blue}30; }}"
+        )
+        layout.addWidget(self._list, 1)
+
+        # 追加フォーム
+        form_frame = QFrame()
+        form_frame.setStyleSheet(
+            f"QFrame {{ background: {self.t.panel}; border: 1px solid {self.t.border}; "
+            f"border-radius: 10px; }}"
+        )
+        form = QFormLayout(form_frame)
+        form.setContentsMargins(12, 10, 12, 10)
+        form.setSpacing(8)
+
+        input_style = (
+            f"background: {self.t.input_bg}; color: {self.t.text}; "
+            f"border: 1px solid {self.t.border}; border-radius: 6px; "
+            f"padding: 5px 8px; font-size: 12px;"
+        )
+        label_style = f"color: {self.t.subtext}; font-size: 12px; font-weight: bold;"
+
+        self._keyword_edit = QLineEdit()
+        self._keyword_edit.setPlaceholderText("例: ワークス")
+        self._keyword_edit.setStyleSheet(input_style)
+        kw_label = QLabel("キーワード")
+        kw_label.setStyleSheet(label_style)
+        form.addRow(kw_label, self._keyword_edit)
+
+        # プロジェクト選択
+        self._project_combo = QComboBox()
+        self._project_combo.setStyleSheet(
+            f"QComboBox {{ {input_style} }}"
+            f"QComboBox::drop-down {{ border: none; }}"
+            f"QComboBox QAbstractItemView {{ background: {self.t.panel}; "
+            f"color: {self.t.text}; selection-background-color: {self.t.accent_blue}40; }}"
+        )
+        projects = scan_projects(self.root_folder)
+        self._project_combo.addItems(projects)
+        self._project_combo.currentTextChanged.connect(self._on_project_changed)
+        pj_label = QLabel("プロジェクト")
+        pj_label.setStyleSheet(label_style)
+        form.addRow(pj_label, self._project_combo)
+
+        # サブフォルダ選択
+        self._subfolder_combo = QComboBox()
+        self._subfolder_combo.setStyleSheet(
+            f"QComboBox {{ {input_style} }}"
+            f"QComboBox::drop-down {{ border: none; }}"
+            f"QComboBox QAbstractItemView {{ background: {self.t.panel}; "
+            f"color: {self.t.text}; selection-background-color: {self.t.accent_blue}40; }}"
+        )
+        sf_label = QLabel("サブフォルダ")
+        sf_label.setStyleSheet(label_style)
+        form.addRow(sf_label, self._subfolder_combo)
+
+        # 初期表示
+        if projects:
+            self._on_project_changed(projects[0])
+
+        layout.addWidget(form_frame)
+
+        # ボタン行
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        add_btn = QPushButton("＋ ルール追加")
+        add_btn.setCursor(Qt.PointingHandCursor)
+        add_btn.setFixedHeight(34)
+        add_btn.setStyleSheet(
+            f"QPushButton {{ background: {self.t.success}18; color: {self.t.success}; "
+            f"border: 1px solid {self.t.success}40; border-radius: 8px; "
+            f"padding: 0 16px; font-size: 12px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {self.t.success}35; }}"
+        )
+        add_btn.clicked.connect(self._add_rule)
+        btn_row.addWidget(add_btn)
+
+        del_btn = QPushButton("🗑 選択を削除")
+        del_btn.setCursor(Qt.PointingHandCursor)
+        del_btn.setFixedHeight(34)
+        del_btn.setStyleSheet(
+            f"QPushButton {{ background: {self.t.error}18; color: {self.t.error}; "
+            f"border: 1px solid {self.t.error}40; border-radius: 8px; "
+            f"padding: 0 16px; font-size: 12px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {self.t.error}35; }}"
+        )
+        del_btn.clicked.connect(self._delete_rule)
+        btn_row.addWidget(del_btn)
+
+        btn_row.addStretch()
+
+        close_btn = QPushButton("閉じる")
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.setFixedHeight(34)
+        close_btn.setStyleSheet(
+            f"QPushButton {{ background: {self.t.subtext}18; color: {self.t.subtext}; "
+            f"border: 1px solid {self.t.subtext}40; border-radius: 8px; "
+            f"padding: 0 16px; font-size: 12px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {self.t.subtext}35; }}"
+        )
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+
+        layout.addLayout(btn_row)
+
+    def _apply_style(self):
+        self.setStyleSheet(
+            f"QDialog {{ background: {self.t.bg}; color: {self.t.text}; }}"
+        )
+
+    def _on_project_changed(self, project: str):
+        self._subfolder_combo.clear()
+        subs = scan_subfolders(self.root_folder, project)
+        self._subfolder_combo.addItems(subs)
+
+    def _refresh_list(self):
+        self._list.clear()
+        for rule in self._rules:
+            kw = rule.get("keyword", "")
+            pj = rule.get("project", "")
+            sf = rule.get("subfolder", "")
+            display = f'「{kw}」 → {pj} / {sf}' if sf else f'「{kw}」 → {pj}'
+            self._list.addItem(display)
+
+    def _add_rule(self):
+        keyword = self._keyword_edit.text().strip()
+        project = self._project_combo.currentText()
+        subfolder = self._subfolder_combo.currentText()
+
+        if not keyword:
+            QMessageBox.warning(self, "入力エラー", "キーワードを入力してください。")
+            return
+        if not project:
+            QMessageBox.warning(self, "入力エラー", "プロジェクトを選択してください。")
+            return
+
+        self._rules.append({
+            "keyword": keyword,
+            "project": project,
+            "subfolder": subfolder,
+        })
+        save_rules(self.root_folder, self._rules)
+        self._refresh_list()
+        self._keyword_edit.clear()
+
+    def _delete_rule(self):
+        row = self._list.currentRow()
+        if row < 0:
+            return
+        self._rules.pop(row)
+        save_rules(self.root_folder, self._rules)
+        self._refresh_list()
+
 
 class DropZone(QFrame):
     files_dropped = Signal(list)
@@ -539,6 +805,14 @@ class MainWindow(QMainWindow):
         header_row.addWidget(header)
 
         header_row.addStretch()
+
+        # ルール管理ボタン
+        self._rules_btn = QPushButton("⚙")
+        self._rules_btn.setFixedSize(36, 36)
+        self._rules_btn.setCursor(Qt.PointingHandCursor)
+        self._rules_btn.setToolTip("分類ルール管理")
+        self._rules_btn.clicked.connect(self._open_rules_dialog)
+        header_row.addWidget(self._rules_btn)
 
         # テーマ切替ボタン
         self._theme_btn = QPushButton()
@@ -824,6 +1098,13 @@ class MainWindow(QMainWindow):
         self._check_ollama()
         self._update_history_hint()
 
+    # ---- ルール管理 ----
+
+    def _open_rules_dialog(self):
+        dlg = RulesDialog(self.root_folder, self._theme, self)
+        dlg.exec()
+        self._update_history_hint()
+
     # ---- コメントインジケーター ----
 
     def _update_comment_indicator(self):
@@ -845,20 +1126,24 @@ class MainWindow(QMainWindow):
             self._comment_clear_btn.setVisible(False)
 
     def _update_history_hint(self):
-        """学習済み件数をヒント表示。"""
+        """学習済み件数・ルール件数をヒント表示。"""
         t = self._theme
+        rules = load_rules(self.root_folder)
         history = load_history(self.root_folder)
+        parts = []
+        if rules:
+            parts.append(f"⚙ ルール {len(rules)}件")
         if history:
-            self._history_hint.setText(
-                f"📚 過去{len(history)}件の分類パターンを学習済み"
-            )
+            parts.append(f"📚 学習 {len(history)}件")
+        if parts:
+            self._history_hint.setText("  |  ".join(parts))
             self._history_hint.setStyleSheet(
                 f"color: {t.accent_blue}; font-size: 10px; "
                 f"border: none; background: transparent; padding: 2px 0 0 0;"
             )
         else:
             self._history_hint.setText(
-                "分類するとパターンを学習し、次回から精度が向上します"
+                "⚙ からルールを登録するか、分類を重ねるとAIの精度が向上します"
             )
             self._history_hint.setStyleSheet(
                 f"color: {t.dim}; font-size: 10px; "
