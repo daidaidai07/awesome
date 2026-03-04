@@ -31,12 +31,11 @@ from PySide6.QtCore import (
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent, QPalette
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QFrame,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -52,35 +51,122 @@ from PySide6.QtWidgets import (
 # 定数
 # ---------------------------------------------------------------------------
 APP_NAME = "ファイル自動仕分けツール"
-APP_VERSION = "2.0.0"
+APP_VERSION = "3.0.0"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "gemma3:4b"
 OLLAMA_TIMEOUT = 60
 UNKNOWN_DIR = "_未分類"
-SUBFOLDERS = ("検討資料", "受領資料", "その他")
 
-# カラーテーマ
-C_BG = "#0c0c10"
-C_PANEL = "#16161e"
-C_PANEL_LIGHT = "#1e1e2a"
-C_BORDER = "#2a2a3a"
-C_ACCENT_BLUE = "#6196ff"
-C_ACCENT_PURPLE = "#a78bfa"
-C_ACCENT_CYAN = "#67e8f9"
-C_SUCCESS = "#34d399"
-C_WARN = "#fbbf24"
-C_ERROR = "#f87171"
-C_TEXT = "#e8e8f0"
-C_SUBTEXT = "#8888aa"
-C_DIM = "#555570"
+# 分類履歴ファイル（整理先フォルダ直下に保存）
+HISTORY_FILE = "_分類履歴.json"
 
 
 # ---------------------------------------------------------------------------
-# プロジェクトフォルダ検出
+# カラーテーマ（ダーク / ライト）
+# ---------------------------------------------------------------------------
+
+class Theme:
+    """ダーク・ライト両対応のカラーテーマ。"""
+
+    DARK = {
+        "bg": "#0c0c10", "panel": "#16161e", "panel_light": "#1e1e2a",
+        "border": "#2a2a3a", "accent_blue": "#6196ff", "accent_purple": "#a78bfa",
+        "success": "#34d399", "warn": "#fbbf24", "error": "#f87171",
+        "text": "#e8e8f0", "subtext": "#8888aa", "dim": "#555570",
+        "drop_hover": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #1a1a30,stop:1 #1a2a2a)",
+        "input_bg": "#1e1e2a",
+    }
+    LIGHT = {
+        "bg": "#f5f5f8", "panel": "#ffffff", "panel_light": "#f0f0f5",
+        "border": "#d8d8e0", "accent_blue": "#3b6fdf", "accent_purple": "#7c5cbf",
+        "success": "#16a368", "warn": "#d49a08", "error": "#dc3545",
+        "text": "#1a1a2e", "subtext": "#6e6e88", "dim": "#9999aa",
+        "drop_hover": "qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #e8e8ff,stop:1 #e0f0f0)",
+        "input_bg": "#f0f0f5",
+    }
+
+    def __init__(self, mode: str = "dark"):
+        self._mode = mode
+        self._colors = self.DARK if mode == "dark" else self.LIGHT
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def __getattr__(self, name: str) -> str:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        try:
+            return self._colors[name]
+        except KeyError:
+            raise AttributeError(f"No color '{name}' in theme")
+
+    def toggle(self) -> "Theme":
+        return Theme("light" if self._mode == "dark" else "dark")
+
+
+# ---------------------------------------------------------------------------
+# 分類履歴（学習機能）
+# ---------------------------------------------------------------------------
+
+def _history_path(root: str) -> Path:
+    return Path(root) / HISTORY_FILE
+
+
+def load_history(root: str) -> list[dict]:
+    """分類履歴を読み込む。"""
+    hp = _history_path(root)
+    if not hp.exists():
+        return []
+    try:
+        with open(hp, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def save_history_entry(root: str, comment: str, project: str, subfolder: str):
+    """分類結果を履歴に追記する。直近100件を保持。"""
+    if not comment.strip():
+        return
+    history = load_history(root)
+    history.append({
+        "comment": comment.strip(),
+        "project": project,
+        "subfolder": subfolder,
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    })
+    # 直近100件のみ保持
+    history = history[-100:]
+    hp = _history_path(root)
+    try:
+        with open(hp, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def build_history_context(root: str) -> str:
+    """過去の分類履歴をプロンプト用テキストに変換する。直近20件。"""
+    history = load_history(root)
+    if not history:
+        return ""
+    recent = history[-20:]
+    lines = []
+    for h in recent:
+        lines.append(
+            f"  コメント「{h['comment']}」→ {h['project']}/{h['subfolder']}"
+        )
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# フォルダ構造スキャン
 # ---------------------------------------------------------------------------
 
 def scan_projects(root: str) -> list[str]:
-    """ルートフォルダ直下のディレクトリ名を取得。先頭が _ のものは除外。"""
+    """ルートフォルダ直下のディレクトリ名を取得。先頭が _ や . のものは除外。"""
     root_path = Path(root)
     if not root_path.is_dir():
         return []
@@ -91,13 +177,52 @@ def scan_projects(root: str) -> list[str]:
     )
 
 
+def scan_subfolders(root: str, project: str) -> list[str]:
+    """プロジェクトフォルダ内のサブフォルダ一覧を取得。"""
+    project_path = Path(root) / project
+    if not project_path.is_dir():
+        return []
+    return sorted(
+        d.name
+        for d in project_path.iterdir()
+        if d.is_dir() and not d.name.startswith("_") and not d.name.startswith(".")
+    )
+
+
+def scan_all_subfolders(root: str, projects: list[str]) -> dict[str, list[str]]:
+    """全プロジェクトのサブフォルダ構造を取得。"""
+    result = {}
+    for p in projects:
+        subs = scan_subfolders(root, p)
+        if subs:
+            result[p] = subs
+    return result
+
+
 # ---------------------------------------------------------------------------
-# Ollama 呼び出し（ファイル名＋コメントのみ。内容は読まない）
+# Ollama 呼び出し
 # ---------------------------------------------------------------------------
 
-def build_prompt(filename: str, projects: list[str], user_comment: str = "") -> str:
-    project_list = "\n".join(f"- {p}" for p in projects) if projects else "（なし）"
+def build_prompt(
+    filename: str,
+    projects: list[str],
+    subfolder_map: dict[str, list[str]],
+    user_comment: str = "",
+    history_context: str = "",
+) -> str:
+    # フォルダ構造を整形
+    structure_lines = []
+    for p in projects:
+        subs = subfolder_map.get(p, [])
+        if subs:
+            structure_lines.append(f"- {p}/")
+            for s in subs:
+                structure_lines.append(f"    - {s}/")
+        else:
+            structure_lines.append(f"- {p}/  （サブフォルダなし）")
+    folder_structure = "\n".join(structure_lines) if structure_lines else "（なし）"
 
+    # コメントセクション
     comment_section = ""
     if user_comment.strip():
         comment_section = f"""
@@ -105,24 +230,37 @@ def build_prompt(filename: str, projects: list[str], user_comment: str = "") -> 
 {user_comment.strip()}
 """
 
+    # 履歴セクション
+    history_section = ""
+    if history_context.strip():
+        history_section = f"""
+## 過去の分類パターン（参考にして一貫した分類をすること）
+{history_context}
+"""
+
+    # サブフォルダ名の全リストをまとめる
+    all_subs = set()
+    for subs in subfolder_map.values():
+        all_subs.update(subs)
+    subfolder_list = "、".join(sorted(all_subs)) if all_subs else "（サブフォルダなし）"
+
     return f"""あなたはファイル整理の専門家です。以下の情報をもとに、ファイルの分類先を答えてください。
 
 ## ファイル名
 {filename}
-{comment_section}
-## 既存プロジェクトフォルダ一覧
-{project_list}
+{comment_section}{history_section}
+## 既存フォルダ構造
+{folder_structure}
 
 ## 分類ルール
-- projectには既存プロジェクトフォルダ一覧のいずれか、または "unknown" を指定
-- サブフォルダは必ず「検討資料」「受領資料」「その他」のいずれか1つ
-  - 検討資料：自分たちが作成・編集する設計図・計算書・報告書・提案書など
-  - 受領資料：発注者・他社・官庁から受け取った資料・データ・提供ファイルなど
-  - その他：議事録・写真・メモ・分類が難しいもの
+- projectには上記の既存プロジェクトフォルダのいずれか、または "unknown" を指定
+- subfolderには、そのプロジェクト内に実際に存在するサブフォルダ名を正確に指定すること
+  - 存在するサブフォルダ: {subfolder_list}
 - ユーザーからの補足コメントがある場合、それを最優先の判断材料として使うこと
+- 過去の分類パターンがある場合、同様のコメントには同じ分類先を使うこと
 
 ## 回答形式（JSONのみ・余計な文字禁止）
-{{"project": "プロジェクト名またはunknown", "subfolder": "検討資料 or 受領資料 or その他"}}"""
+{{"project": "プロジェクト名またはunknown", "subfolder": "サブフォルダ名"}}"""
 
 
 def call_ollama(prompt: str) -> dict | None:
@@ -157,7 +295,6 @@ def call_ollama(prompt: str) -> dict | None:
 
 
 def check_ollama_connection() -> bool:
-    """Ollama サーバーへの接続を確認する。"""
     try:
         req = urllib.request.Request("http://localhost:11434/api/tags")
         with urllib.request.urlopen(req, timeout=5):
@@ -167,20 +304,16 @@ def check_ollama_connection() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# ファイル移動（フォルダの日付はファイル更新日から取得）
+# ファイル移動
 # ---------------------------------------------------------------------------
 
 def get_file_mod_date(filepath: str) -> str:
-    """ファイルの更新日を YYMMDD 形式で返す。"""
     mtime = os.path.getmtime(filepath)
     return datetime.fromtimestamp(mtime).strftime("%y%m%d")
 
 
 def move_file(filepath: str, dest_dir: str) -> str:
-    """ファイルを日付プレフィックス付きの個別フォルダへ移動する。
-    フォルダ名: YYMMDD_ファイル名(拡張子なし)  ※日付はファイル更新日
-    同名フォルダが既に存在する場合は連番を付与。
-    移動後のパスを返す。"""
+    """ファイルを YYMMDD_ファイル名/ フォルダへ移動。日付はファイル更新日。"""
     src = Path(filepath)
     date_prefix = get_file_mod_date(filepath)
     folder_name = f"{date_prefix}_{src.stem}"
@@ -197,7 +330,6 @@ def move_file(filepath: str, dest_dir: str) -> str:
             counter += 1
 
     file_folder.mkdir(parents=True, exist_ok=True)
-
     target = file_folder / src.name
     shutil.move(str(src), str(target))
     return str(target)
@@ -208,29 +340,37 @@ def move_file(filepath: str, dest_dir: str) -> str:
 # ---------------------------------------------------------------------------
 
 class SortWorker(QObject):
-    """バックグラウンドでファイル仕分けを実行するワーカー。"""
-
     log_signal = Signal(str, str)  # (message, color)
     status_signal = Signal(str)
     finished = Signal()
     undo_record = Signal(str, str)  # (moved_to, original_path)
+    history_record = Signal(str, str, str)  # (comment, project, subfolder)
 
-    def __init__(self, files: list[str], root_folder: str, user_comment: str = ""):
+    def __init__(
+        self, files: list[str], root_folder: str, user_comment: str = "",
+        theme: Theme | None = None,
+    ):
         super().__init__()
         self.files = files
         self.root_folder = root_folder
         self.user_comment = user_comment
+        self.t = theme or Theme()
 
     def run(self):
         projects = scan_projects(self.root_folder)
+        subfolder_map = scan_all_subfolders(self.root_folder, projects)
+        history_context = build_history_context(self.root_folder)
         total = len(self.files)
 
         for i, filepath in enumerate(self.files, 1):
             filename = Path(filepath).name
             self.status_signal.emit(f"処理中… ({i}/{total}) {filename}")
-            self.log_signal.emit(f"🔍 分類中: {filename}", C_SUBTEXT)
+            self.log_signal.emit(f"🔍 分類中: {filename}", self.t.subtext)
 
-            prompt = build_prompt(filename, projects, self.user_comment)
+            prompt = build_prompt(
+                filename, projects, subfolder_map,
+                self.user_comment, history_context,
+            )
             result = call_ollama(prompt)
 
             if result is None:
@@ -240,15 +380,12 @@ class SortWorker(QObject):
                 self.undo_record.emit(moved, filepath)
                 self.log_signal.emit(
                     f"⚠️ AI応答を解析できません → {UNKNOWN_DIR}/{moved_folder}/",
-                    C_WARN,
+                    self.t.warn,
                 )
                 continue
 
             project = result.get("project", "unknown")
-            subfolder = result.get("subfolder", "その他")
-
-            if subfolder not in SUBFOLDERS:
-                subfolder = "その他"
+            subfolder = result.get("subfolder", "")
 
             if project == "unknown" or project not in projects:
                 dest_dir = str(Path(self.root_folder) / UNKNOWN_DIR)
@@ -257,17 +394,34 @@ class SortWorker(QObject):
                 self.undo_record.emit(moved, filepath)
                 self.log_signal.emit(
                     f"⚠️ プロジェクト不明 → {UNKNOWN_DIR}/{moved_folder}/",
-                    C_WARN,
+                    self.t.warn,
                 )
-            else:
+                continue
+
+            # サブフォルダのバリデーション：実在するもののみ許可
+            valid_subs = subfolder_map.get(project, [])
+            if subfolder not in valid_subs:
+                # 最も近いサブフォルダを探す、なければ先頭、それもなければ直下
+                if valid_subs:
+                    subfolder = valid_subs[0]
+                else:
+                    subfolder = ""
+
+            if subfolder:
                 dest_dir = str(Path(self.root_folder) / project / subfolder)
-                moved = move_file(filepath, dest_dir)
-                moved_folder = Path(moved).parent.name
-                self.undo_record.emit(moved, filepath)
-                self.log_signal.emit(
-                    f"✅ {filename} → {project}/{subfolder}/{moved_folder}/",
-                    C_SUCCESS,
-                )
+            else:
+                dest_dir = str(Path(self.root_folder) / project)
+
+            moved = move_file(filepath, dest_dir)
+            moved_folder = Path(moved).parent.name
+            self.undo_record.emit(moved, filepath)
+
+            display_path = f"{project}/{subfolder}/{moved_folder}/" if subfolder else f"{project}/{moved_folder}/"
+            self.log_signal.emit(
+                f"✅ {filename} → {display_path}", self.t.success,
+            )
+            # 履歴記録
+            self.history_record.emit(self.user_comment, project, subfolder)
 
         self.status_signal.emit("✅ 完了")
         self.finished.emit()
@@ -277,64 +431,52 @@ class SortWorker(QObject):
 # UI コンポーネント
 # ---------------------------------------------------------------------------
 
-def _card_frame(parent=None) -> QFrame:
-    """角丸パネルカードを生成する。"""
-    frame = QFrame(parent)
-    frame.setStyleSheet(
-        f"QFrame {{ background: {C_PANEL}; border: 1px solid {C_BORDER}; "
-        f"border-radius: 14px; }}"
-    )
-    return frame
-
-
 class DropZone(QFrame):
-    """ドラッグ＆ドロップを受け付けるエリア。"""
-
     files_dropped = Signal(list)
 
-    def __init__(self):
+    def __init__(self, theme: Theme):
         super().__init__()
+        self.t = theme
         self.setAcceptDrops(True)
-        self.setMinimumHeight(130)
-        self.setMaximumHeight(160)
+        self.setMinimumHeight(120)
+        self.setMaximumHeight(150)
         self._update_style(False)
 
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
-        layout.setSpacing(6)
+        layout.setSpacing(4)
 
-        icon_label = QLabel("📂")
-        icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setStyleSheet("font-size: 32px; border: none; background: transparent;")
-        layout.addWidget(icon_label)
+        self._icon = QLabel("📂")
+        self._icon.setAlignment(Qt.AlignCenter)
+        self._icon.setStyleSheet("font-size: 30px; border: none; background: transparent;")
+        layout.addWidget(self._icon)
 
-        text_label = QLabel("ここにファイルをドロップ")
-        text_label.setAlignment(Qt.AlignCenter)
-        text_label.setStyleSheet(
-            f"color: {C_SUBTEXT}; font-size: 13px; font-weight: bold; "
+        self._text = QLabel("ここにファイルをドロップ（複数可）")
+        self._text.setAlignment(Qt.AlignCenter)
+        self._text.setStyleSheet(
+            f"color: {self.t.subtext}; font-size: 13px; font-weight: bold; "
             f"border: none; background: transparent;"
         )
-        layout.addWidget(text_label)
+        layout.addWidget(self._text)
 
-        hint_label = QLabel("複数ファイル対応")
-        hint_label.setAlignment(Qt.AlignCenter)
-        hint_label.setStyleSheet(
-            f"color: {C_DIM}; font-size: 11px; border: none; background: transparent;"
+    def apply_theme(self, theme: Theme):
+        self.t = theme
+        self._text.setStyleSheet(
+            f"color: {self.t.subtext}; font-size: 13px; font-weight: bold; "
+            f"border: none; background: transparent;"
         )
-        layout.addWidget(hint_label)
+        self._update_style(False)
 
     def _update_style(self, hover: bool):
         if hover:
             self.setStyleSheet(
-                f"DropZone {{ background: qlineargradient("
-                f"x1:0, y1:0, x2:1, y2:1, "
-                f"stop:0 #1a1a30, stop:1 #1a2a2a); "
-                f"border: 2px dashed {C_ACCENT_BLUE}; border-radius: 14px; }}"
+                f"DropZone {{ background: {self.t.drop_hover}; "
+                f"border: 2px dashed {self.t.accent_blue}; border-radius: 14px; }}"
             )
         else:
             self.setStyleSheet(
-                f"DropZone {{ background: {C_PANEL}; "
-                f"border: 2px dashed {C_BORDER}; border-radius: 14px; }}"
+                f"DropZone {{ background: {self.t.panel}; "
+                f"border: 2px dashed {self.t.border}; border-radius: 14px; }}"
             )
 
     def dragEnterEvent(self, event: QDragEnterEvent):
@@ -361,16 +503,19 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.resize(720, 780)
-        self.setMinimumSize(560, 620)
+        self.resize(720, 800)
+        self.setMinimumSize(560, 640)
 
         self._settings = QSettings("FileSorter", "FileSorter")
         self._worker_thread: QThread | None = None
         self._undo_stack: list[tuple[str, str]] = []
-        self._pending_files: list[str] = []
+
+        # テーマ初期化
+        saved_mode = self._settings.value("theme_mode", "dark")
+        self._theme = Theme(saved_mode)
 
         self._init_ui()
-        self._apply_global_style()
+        self._apply_theme()
         self._load_settings()
         self._refresh_projects()
         self._check_ollama()
@@ -382,157 +527,148 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(24, 20, 24, 20)
+        root.setContentsMargins(24, 18, 24, 18)
         root.setSpacing(0)
 
-        # ── ヘッダー ──
-        header = QLabel(APP_NAME)
-        header.setAlignment(Qt.AlignCenter)
-        header.setStyleSheet(
-            f"color: {C_TEXT}; font-size: 24px; font-weight: 800; "
-            f"letter-spacing: 2px; padding-bottom: 2px;"
-        )
-        root.addWidget(header)
+        # ── ヘッダー行 ──
+        header_row = QHBoxLayout()
+        header_row.setSpacing(0)
 
+        header = QLabel(APP_NAME)
+        header.setObjectName("header")
+        header_row.addWidget(header)
+
+        header_row.addStretch()
+
+        # テーマ切替ボタン
+        self._theme_btn = QPushButton()
+        self._theme_btn.setFixedSize(36, 36)
+        self._theme_btn.setCursor(Qt.PointingHandCursor)
+        self._theme_btn.setToolTip("ダーク / ライト 切替")
+        self._theme_btn.clicked.connect(self._toggle_theme)
+        header_row.addWidget(self._theme_btn)
+
+        root.addLayout(header_row)
+
+        # サブタイトル
         sub = QLabel(f"Powered by Ollama + {OLLAMA_MODEL}  |  完全ローカル処理")
+        sub.setObjectName("subtitle")
         sub.setAlignment(Qt.AlignCenter)
-        sub.setStyleSheet(f"color: {C_DIM}; font-size: 11px; padding-bottom: 6px;")
         root.addWidget(sub)
 
         # Ollama 接続バッジ
         self._ollama_badge = QLabel()
+        self._ollama_badge.setObjectName("badge")
         self._ollama_badge.setAlignment(Qt.AlignCenter)
         self._ollama_badge.setFixedHeight(22)
         root.addWidget(self._ollama_badge)
 
-        root.addSpacing(14)
+        root.addSpacing(12)
 
-        # ── フォルダ選択カード ──
-        folder_card = _card_frame()
-        fc_layout = QHBoxLayout(folder_card)
+        # ── フォルダ選択 ──
+        self._folder_card = QFrame()
+        self._folder_card.setObjectName("card")
+        fc_layout = QHBoxLayout(self._folder_card)
         fc_layout.setContentsMargins(14, 10, 14, 10)
 
         folder_icon = QLabel("📁")
-        folder_icon.setStyleSheet("font-size: 16px; border: none; background: transparent;")
+        folder_icon.setStyleSheet("font-size: 15px; border: none; background: transparent;")
         fc_layout.addWidget(folder_icon)
 
         self._folder_edit = QLineEdit()
+        self._folder_edit.setObjectName("folder_path")
         self._folder_edit.setReadOnly(True)
-        self._folder_edit.setStyleSheet(
-            f"background: transparent; color: {C_TEXT}; border: none; "
-            f"font-size: 12px; padding: 2px 6px;"
-        )
         fc_layout.addWidget(self._folder_edit, 1)
 
-        change_btn = QPushButton("変更")
-        change_btn.setFixedSize(56, 28)
-        change_btn.setCursor(Qt.PointingHandCursor)
-        change_btn.setStyleSheet(
-            f"QPushButton {{ background: {C_ACCENT_PURPLE}18; color: {C_ACCENT_PURPLE}; "
-            f"border: 1px solid {C_ACCENT_PURPLE}40; border-radius: 6px; "
-            f"font-size: 11px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background: {C_ACCENT_PURPLE}35; }}"
-        )
-        change_btn.clicked.connect(self._select_folder)
-        fc_layout.addWidget(change_btn)
+        self._change_btn = QPushButton("変更")
+        self._change_btn.setObjectName("small_btn")
+        self._change_btn.setFixedSize(56, 28)
+        self._change_btn.setCursor(Qt.PointingHandCursor)
+        self._change_btn.clicked.connect(self._select_folder)
+        fc_layout.addWidget(self._change_btn)
 
-        root.addWidget(folder_card)
+        root.addWidget(self._folder_card)
         root.addSpacing(4)
 
-        # プロジェクト一覧
+        # プロジェクト＆サブフォルダ一覧
         self._projects_label = QLabel()
+        self._projects_label.setObjectName("projects_info")
         self._projects_label.setWordWrap(True)
-        self._projects_label.setStyleSheet(
-            f"color: {C_DIM}; font-size: 11px; padding: 2px 8px;"
-        )
         root.addWidget(self._projects_label)
 
         root.addSpacing(10)
 
         # ── ドロップゾーン ──
-        self._drop_zone = DropZone()
+        self._drop_zone = DropZone(self._theme)
         self._drop_zone.files_dropped.connect(self._on_files_dropped)
         root.addWidget(self._drop_zone)
 
         root.addSpacing(10)
 
-        # ── コメント入力セクション ──
-        comment_card = _card_frame()
-        cc_layout = QVBoxLayout(comment_card)
+        # ── コメント入力 ──
+        self._comment_card = QFrame()
+        self._comment_card.setObjectName("card")
+        cc_layout = QVBoxLayout(self._comment_card)
         cc_layout.setContentsMargins(14, 10, 14, 10)
-        cc_layout.setSpacing(8)
+        cc_layout.setSpacing(6)
 
-        comment_header = QHBoxLayout()
-        comment_title = QLabel("💬 補足コメント")
-        comment_title.setStyleSheet(
-            f"color: {C_SUBTEXT}; font-size: 12px; font-weight: bold; "
-            f"border: none; background: transparent;"
-        )
-        comment_header.addWidget(comment_title)
+        # コメントヘッダー行
+        ch = QHBoxLayout()
+        self._comment_title = QLabel("💬 補足コメント")
+        self._comment_title.setObjectName("comment_title")
+        ch.addWidget(self._comment_title)
 
         self._comment_badge = QLabel()
-        self._comment_badge.setStyleSheet(
-            f"border: none; background: transparent; font-size: 11px;"
-        )
-        comment_header.addWidget(self._comment_badge)
+        self._comment_badge.setObjectName("comment_badge")
+        ch.addWidget(self._comment_badge)
+        ch.addStretch()
+        cc_layout.addLayout(ch)
 
-        comment_header.addStretch()
-        cc_layout.addLayout(comment_header)
-
-        # コメント入力行
+        # 入力行
         input_row = QHBoxLayout()
         input_row.setSpacing(8)
 
         self._comment_edit = QLineEdit()
+        self._comment_edit.setObjectName("comment_input")
         self._comment_edit.setPlaceholderText(
-            "例: A社から受領した構造計算書、○○橋の現場写真 …"
-        )
-        self._comment_edit.setStyleSheet(
-            f"background: {C_PANEL_LIGHT}; color: {C_TEXT}; "
-            f"border: 1px solid {C_BORDER}; border-radius: 8px; "
-            f"padding: 8px 12px; font-size: 13px;"
+            "例: ワークスから受領した構造計算書、○○橋の現場写真 …"
         )
         self._comment_edit.textChanged.connect(self._update_comment_indicator)
         input_row.addWidget(self._comment_edit, 1)
 
         self._comment_clear_btn = QPushButton("✕")
+        self._comment_clear_btn.setObjectName("clear_btn")
         self._comment_clear_btn.setFixedSize(32, 32)
         self._comment_clear_btn.setCursor(Qt.PointingHandCursor)
         self._comment_clear_btn.setToolTip("コメントをクリア")
-        self._comment_clear_btn.setStyleSheet(
-            f"QPushButton {{ background: {C_ERROR}15; color: {C_ERROR}; "
-            f"border: 1px solid {C_ERROR}30; border-radius: 8px; "
-            f"font-size: 14px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background: {C_ERROR}30; }}"
-        )
-        self._comment_clear_btn.clicked.connect(self._clear_comment)
+        self._comment_clear_btn.clicked.connect(self._comment_edit.clear)
         input_row.addWidget(self._comment_clear_btn)
 
         cc_layout.addLayout(input_row)
-        root.addWidget(comment_card)
+
+        # 学習済みヒント
+        self._history_hint = QLabel()
+        self._history_hint.setObjectName("history_hint")
+        self._history_hint.setWordWrap(True)
+        cc_layout.addWidget(self._history_hint)
+
+        root.addWidget(self._comment_card)
 
         root.addSpacing(10)
 
         # ── ステータス ──
         self._status_label = QLabel("待機中")
+        self._status_label.setObjectName("status")
         self._status_label.setAlignment(Qt.AlignCenter)
         self._status_label.setFixedHeight(24)
-        self._status_label.setStyleSheet(
-            f"color: {C_ACCENT_BLUE}; font-size: 13px; font-weight: bold;"
-        )
         root.addWidget(self._status_label)
 
         root.addSpacing(6)
 
-        # ── ログエリア ──
+        # ── ログ ──
         self._log_area = QTextEdit()
+        self._log_area.setObjectName("log")
         self._log_area.setReadOnly(True)
-        self._log_area.setStyleSheet(
-            f"QTextEdit {{ background: {C_PANEL}; color: {C_TEXT}; "
-            f"border: 1px solid {C_BORDER}; border-radius: 12px; "
-            f"padding: 10px 12px; font-size: 12px; "
-            f"selection-background-color: {C_ACCENT_BLUE}40; }}"
-        )
         root.addWidget(self._log_area, 1)
 
         root.addSpacing(10)
@@ -541,79 +677,193 @@ class MainWindow(QMainWindow):
         btn_bar = QHBoxLayout()
         btn_bar.setSpacing(10)
 
-        undo_btn = self._make_button("↩  元に戻す", C_WARN)
-        undo_btn.clicked.connect(self._undo_last)
-        btn_bar.addWidget(undo_btn)
+        self._undo_btn = QPushButton("↩  元に戻す")
+        self._undo_btn.setObjectName("action_btn_warn")
+        self._undo_btn.setCursor(Qt.PointingHandCursor)
+        self._undo_btn.setFixedHeight(34)
+        self._undo_btn.clicked.connect(self._undo_last)
+        btn_bar.addWidget(self._undo_btn)
 
         btn_bar.addStretch()
 
-        clear_btn = self._make_button("ログをクリア", C_SUBTEXT)
-        clear_btn.clicked.connect(self._log_area.clear)
-        btn_bar.addWidget(clear_btn)
+        self._clear_log_btn = QPushButton("ログをクリア")
+        self._clear_log_btn.setObjectName("action_btn_dim")
+        self._clear_log_btn.setCursor(Qt.PointingHandCursor)
+        self._clear_log_btn.setFixedHeight(34)
+        self._clear_log_btn.clicked.connect(self._log_area.clear)
+        btn_bar.addWidget(self._clear_log_btn)
 
         root.addLayout(btn_bar)
 
-    # ---- スタイル ----
+    # ---- テーマ ----
 
-    def _apply_global_style(self):
+    def _apply_theme(self):
+        t = self._theme
+        # テーマ切替ボタンのアイコン
+        icon = "☀️" if t.mode == "dark" else "🌙"
+        self._theme_btn.setText(icon)
+
         self.setStyleSheet(f"""
-            QMainWindow {{ background: {C_BG}; }}
+            QMainWindow {{ background: {t.bg}; }}
             QWidget {{
-                background: {C_BG}; color: {C_TEXT};
+                background: {t.bg}; color: {t.text};
                 font-family: 'Yu Gothic UI', 'Meiryo', 'Segoe UI', sans-serif;
             }}
+
+            #header {{
+                color: {t.text}; font-size: 22px; font-weight: 800;
+                letter-spacing: 1px;
+            }}
+            #subtitle {{
+                color: {t.dim}; font-size: 11px; padding: 2px 0 4px 0;
+            }}
+
+            QPushButton#small_btn {{
+                background: {t.accent_purple}18; color: {t.accent_purple};
+                border: 1px solid {t.accent_purple}40; border-radius: 6px;
+                font-size: 11px; font-weight: bold;
+            }}
+            QPushButton#small_btn:hover {{ background: {t.accent_purple}35; }}
+
+            QFrame#card {{
+                background: {t.panel}; border: 1px solid {t.border};
+                border-radius: 12px;
+            }}
+
+            #folder_path {{
+                background: transparent; color: {t.text}; border: none;
+                font-size: 12px; padding: 2px 6px;
+            }}
+
+            #projects_info {{
+                color: {t.dim}; font-size: 11px; padding: 2px 8px;
+            }}
+
+            #comment_title {{
+                color: {t.subtext}; font-size: 12px; font-weight: bold;
+                border: none; background: transparent;
+            }}
+            #comment_badge {{
+                border: none; background: transparent; font-size: 11px;
+            }}
+            #comment_input {{
+                background: {t.input_bg}; color: {t.text};
+                border: 1px solid {t.border}; border-radius: 8px;
+                padding: 8px 12px; font-size: 13px;
+            }}
+            QPushButton#clear_btn {{
+                background: {t.error}15; color: {t.error};
+                border: 1px solid {t.error}30; border-radius: 8px;
+                font-size: 14px; font-weight: bold;
+            }}
+            QPushButton#clear_btn:hover {{ background: {t.error}30; }}
+
+            #history_hint {{
+                color: {t.dim}; font-size: 10px; padding: 2px 0 0 0;
+                border: none; background: transparent;
+            }}
+
+            #status {{
+                color: {t.accent_blue}; font-size: 13px; font-weight: bold;
+            }}
+
+            QTextEdit#log {{
+                background: {t.panel}; color: {t.text};
+                border: 1px solid {t.border}; border-radius: 12px;
+                padding: 10px 12px; font-size: 12px;
+                selection-background-color: {t.accent_blue}40;
+            }}
+
+            QPushButton#action_btn_warn {{
+                background: {t.warn}12; color: {t.warn};
+                border: 1px solid {t.warn}35; border-radius: 8px;
+                padding: 0 18px; font-size: 12px; font-weight: bold;
+            }}
+            QPushButton#action_btn_warn:hover {{
+                background: {t.warn}28; border-color: {t.warn}60;
+            }}
+
+            QPushButton#action_btn_dim {{
+                background: {t.subtext}12; color: {t.subtext};
+                border: 1px solid {t.subtext}35; border-radius: 8px;
+                padding: 0 18px; font-size: 12px; font-weight: bold;
+            }}
+            QPushButton#action_btn_dim:hover {{
+                background: {t.subtext}28; border-color: {t.subtext}60;
+            }}
+
+            QPushButton {{ font-size: 16px; background: transparent; border: none; }}
+
             QScrollBar:vertical {{
-                background: {C_PANEL}; width: 6px;
+                background: {t.panel}; width: 6px;
                 border-radius: 3px; margin: 4px 0;
             }}
             QScrollBar::handle:vertical {{
-                background: {C_BORDER}; border-radius: 3px; min-height: 30px;
+                background: {t.border}; border-radius: 3px; min-height: 30px;
             }}
-            QScrollBar::handle:vertical:hover {{ background: {C_SUBTEXT}; }}
+            QScrollBar::handle:vertical:hover {{ background: {t.subtext}; }}
             QScrollBar::add-line:vertical,
             QScrollBar::sub-line:vertical {{ height: 0px; }}
+
             QToolTip {{
-                background: {C_PANEL_LIGHT}; color: {C_TEXT};
-                border: 1px solid {C_BORDER}; border-radius: 6px;
+                background: {t.panel_light}; color: {t.text};
+                border: 1px solid {t.border}; border-radius: 6px;
                 padding: 4px 8px; font-size: 11px;
             }}
         """)
 
-    @staticmethod
-    def _make_button(text: str, color: str) -> QPushButton:
-        btn = QPushButton(text)
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setFixedHeight(34)
-        btn.setStyleSheet(
-            f"QPushButton {{ background: {color}12; color: {color}; "
-            f"border: 1px solid {color}35; border-radius: 8px; "
-            f"padding: 0 18px; font-size: 12px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background: {color}28; border-color: {color}60; }}"
-            f"QPushButton:pressed {{ background: {color}40; }}"
-        )
-        return btn
+        # DropZone のテーマも更新
+        if hasattr(self, "_drop_zone"):
+            self._drop_zone.apply_theme(t)
+
+    def _toggle_theme(self):
+        self._theme = self._theme.toggle()
+        self._settings.setValue("theme_mode", self._theme.mode)
+        self._apply_theme()
+        self._update_comment_indicator()
+        self._check_ollama()
+        self._update_history_hint()
 
     # ---- コメントインジケーター ----
 
     def _update_comment_indicator(self):
+        t = self._theme
         text = self._comment_edit.text().strip()
         if text:
-            self._comment_badge.setText(f"✔ 入力済み（AIに送信されます）")
+            self._comment_badge.setText("✔ 入力済み（ドロップ時にAIへ送信）")
             self._comment_badge.setStyleSheet(
-                f"color: {C_SUCCESS}; font-size: 11px; font-weight: bold; "
+                f"color: {t.success}; font-size: 11px; font-weight: bold; "
                 f"border: none; background: transparent;"
             )
             self._comment_clear_btn.setVisible(True)
         else:
-            self._comment_badge.setText("任意 — 入力するとAIの分類精度が上がります")
+            self._comment_badge.setText("任意 — 入力するとAIの分類精度が向上")
             self._comment_badge.setStyleSheet(
-                f"color: {C_DIM}; font-size: 11px; "
+                f"color: {t.dim}; font-size: 11px; "
                 f"border: none; background: transparent;"
             )
             self._comment_clear_btn.setVisible(False)
 
-    def _clear_comment(self):
-        self._comment_edit.clear()
+    def _update_history_hint(self):
+        """学習済み件数をヒント表示。"""
+        t = self._theme
+        history = load_history(self.root_folder)
+        if history:
+            self._history_hint.setText(
+                f"📚 過去{len(history)}件の分類パターンを学習済み"
+            )
+            self._history_hint.setStyleSheet(
+                f"color: {t.accent_blue}; font-size: 10px; "
+                f"border: none; background: transparent; padding: 2px 0 0 0;"
+            )
+        else:
+            self._history_hint.setText(
+                "分類するとパターンを学習し、次回から精度が向上します"
+            )
+            self._history_hint.setStyleSheet(
+                f"color: {t.dim}; font-size: 10px; "
+                f"border: none; background: transparent; padding: 2px 0 0 0;"
+            )
 
     # ---- 設定 ----
 
@@ -631,22 +881,22 @@ class MainWindow(QMainWindow):
     def root_folder(self) -> str:
         return self._folder_edit.text()
 
-    # ---- Ollama 接続確認 ----
+    # ---- Ollama ----
 
     def _check_ollama(self):
-        connected = check_ollama_connection()
-        if connected:
+        t = self._theme
+        if check_ollama_connection():
             self._ollama_badge.setText("● 接続済み")
             self._ollama_badge.setStyleSheet(
-                f"color: {C_SUCCESS}; font-size: 11px; font-weight: bold;"
+                f"color: {t.success}; font-size: 11px; font-weight: bold;"
             )
         else:
             self._ollama_badge.setText("● 未接続 — Ollama を起動してください")
             self._ollama_badge.setStyleSheet(
-                f"color: {C_ERROR}; font-size: 11px; font-weight: bold;"
+                f"color: {t.error}; font-size: 11px; font-weight: bold;"
             )
 
-    # ---- フォルダ選択 ----
+    # ---- フォルダ ----
 
     def _select_folder(self):
         folder = QFileDialog.getExistingDirectory(
@@ -656,17 +906,29 @@ class MainWindow(QMainWindow):
             self._folder_edit.setText(folder)
             self._save_settings()
             self._refresh_projects()
+            self._update_history_hint()
 
     def _refresh_projects(self):
         projects = scan_projects(self.root_folder)
+        subfolder_map = scan_all_subfolders(self.root_folder, projects)
+
         if projects:
+            parts = []
+            for p in projects:
+                subs = subfolder_map.get(p, [])
+                if subs:
+                    parts.append(f"{p}（{', '.join(subs)}）")
+                else:
+                    parts.append(p)
             self._projects_label.setText(
-                f"検出プロジェクト ({len(projects)}):  " + "、".join(projects)
+                f"検出フォルダ ({len(projects)}):  " + "、".join(parts)
             )
         else:
             self._projects_label.setText("プロジェクトフォルダが見つかりません")
 
-    # ---- ファイルドロップ処理 ----
+        self._update_history_hint()
+
+    # ---- ファイルドロップ ----
 
     def _on_files_dropped(self, files: list[str]):
         if self._worker_thread is not None and self._worker_thread.isRunning():
@@ -675,7 +937,8 @@ class MainWindow(QMainWindow):
 
         if not check_ollama_connection():
             self._check_ollama()
-            self._append_log("❌ Ollama に接続できません。サーバーを起動してください。", C_ERROR)
+            self._append_log("❌ Ollama に接続できません。サーバーを起動してください。",
+                             self._theme.error)
             return
 
         self._refresh_projects()
@@ -683,17 +946,19 @@ class MainWindow(QMainWindow):
 
         user_comment = self._comment_edit.text().strip()
         if user_comment:
-            self._append_log(f"💬 コメント反映: {user_comment}", C_ACCENT_PURPLE)
+            self._append_log(f"💬 コメント反映: {user_comment}", self._theme.accent_purple)
 
-        # ワーカー起動
         self._worker_thread = QThread()
-        self._worker = SortWorker(files, self.root_folder, user_comment)
+        self._worker = SortWorker(
+            files, self.root_folder, user_comment, self._theme,
+        )
         self._worker.moveToThread(self._worker_thread)
 
         self._worker.log_signal.connect(self._append_log)
         self._worker.status_signal.connect(self._status_label.setText)
         self._worker.finished.connect(self._on_worker_finished)
         self._worker.undo_record.connect(self._record_undo)
+        self._worker.history_record.connect(self._save_history)
 
         self._worker_thread.started.connect(self._worker.run)
         self._worker_thread.start()
@@ -705,6 +970,12 @@ class MainWindow(QMainWindow):
             self._worker_thread = None
         self._comment_edit.clear()
         self._check_ollama()
+        self._update_history_hint()
+
+    # ---- 履歴保存 ----
+
+    def _save_history(self, comment: str, project: str, subfolder: str):
+        save_history_entry(self.root_folder, comment, project, subfolder)
 
     # ---- 元に戻す ----
 
@@ -713,36 +984,39 @@ class MainWindow(QMainWindow):
 
     def _undo_last(self):
         if not self._undo_stack:
-            self._append_log("↩ 戻せる操作がありません。", C_SUBTEXT)
+            self._append_log("↩ 戻せる操作がありません。", self._theme.subtext)
             return
 
         moved_to, original_path = self._undo_stack.pop()
         moved_path = Path(moved_to)
 
         if not moved_path.exists():
-            self._append_log(f"❌ ファイルが見つかりません: {moved_to}", C_ERROR)
+            self._append_log(f"❌ ファイルが見つかりません: {moved_to}",
+                             self._theme.error)
             return
 
         try:
-            original_dir = str(Path(original_path).parent)
-            Path(original_dir).mkdir(parents=True, exist_ok=True)
+            Path(original_path).parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(moved_path), original_path)
             parent_folder = moved_path.parent
             if parent_folder.is_dir() and not any(parent_folder.iterdir()):
                 parent_folder.rmdir()
             self._append_log(
                 f"↩ 元に戻しました: {moved_path.name} → {original_path}",
-                C_ACCENT_PURPLE,
+                self._theme.accent_purple,
             )
         except Exception as e:
-            self._append_log(f"❌ 元に戻す操作に失敗: {e}", C_ERROR)
+            self._append_log(f"❌ 元に戻す操作に失敗: {e}", self._theme.error)
 
     # ---- ログ ----
 
-    def _append_log(self, message: str, color: str = C_TEXT):
+    def _append_log(self, message: str, color: str = ""):
+        t = self._theme
+        if not color:
+            color = t.text
         timestamp = datetime.now().strftime("%H:%M:%S")
         self._log_area.append(
-            f'<span style="color:{C_DIM}">{timestamp}</span>'
+            f'<span style="color:{t.dim}">{timestamp}</span>'
             f'&nbsp;&nbsp;'
             f'<span style="color:{color}">{message}</span>'
         )
@@ -757,7 +1031,6 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
