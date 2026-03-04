@@ -262,20 +262,29 @@ def check_ollama_connection() -> bool:
 # ---------------------------------------------------------------------------
 
 def move_file(filepath: str, dest_dir: str) -> str:
-    """ファイルを移動する。同名ファイルがあればタイムスタンプを付与。
+    """ファイルを日付プレフィックス付きの個別フォルダへ移動する。
+    フォルダ名: YYMMDD_ファイル名(拡張子なし)
+    同名フォルダが既に存在する場合は連番を付与。
     移動後のパスを返す。"""
-    dest_path = Path(dest_dir)
-    dest_path.mkdir(parents=True, exist_ok=True)
-
     src = Path(filepath)
-    target = dest_path / src.name
+    date_prefix = datetime.now().strftime("%y%m%d")
+    folder_name = f"{date_prefix}_{src.stem}"
 
-    if target.exists():
-        stem = src.stem
-        suffix = src.suffix
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        target = dest_path / f"{stem}_{ts}{suffix}"
+    file_folder = Path(dest_dir) / folder_name
 
+    # 同名フォルダが存在する場合は連番付与
+    if file_folder.exists():
+        counter = 2
+        while True:
+            candidate = Path(dest_dir) / f"{folder_name}_{counter}"
+            if not candidate.exists():
+                file_folder = candidate
+                break
+            counter += 1
+
+    file_folder.mkdir(parents=True, exist_ok=True)
+
+    target = file_folder / src.name
     shutil.move(str(src), str(target))
     return str(target)
 
@@ -317,9 +326,10 @@ class SortWorker(QObject):
                 # パース失敗 → 未分類
                 dest_dir = str(Path(self.root_folder) / UNKNOWN_DIR)
                 moved = move_file(filepath, dest_dir)
+                moved_folder = Path(moved).parent.name
                 self.undo_record.emit(moved, filepath)
                 self.log_signal.emit(
-                    f"⚠️ AI応答を解析できません → {UNKNOWN_DIR}/ へ移動: {filename}",
+                    f"⚠️ AI応答を解析できません → {UNKNOWN_DIR}/{moved_folder}/",
                     C_WARN,
                 )
                 continue
@@ -334,17 +344,19 @@ class SortWorker(QObject):
             if project == "unknown" or project not in projects:
                 dest_dir = str(Path(self.root_folder) / UNKNOWN_DIR)
                 moved = move_file(filepath, dest_dir)
+                moved_folder = Path(moved).parent.name
                 self.undo_record.emit(moved, filepath)
                 self.log_signal.emit(
-                    f"⚠️ プロジェクト不明 → {UNKNOWN_DIR}/ へ移動: {filename}",
+                    f"⚠️ プロジェクト不明 → {UNKNOWN_DIR}/{moved_folder}/",
                     C_WARN,
                 )
             else:
                 dest_dir = str(Path(self.root_folder) / project / subfolder)
                 moved = move_file(filepath, dest_dir)
+                moved_folder = Path(moved).parent.name
                 self.undo_record.emit(moved, filepath)
                 self.log_signal.emit(
-                    f"✅ {filename} → {project}/{subfolder}/",
+                    f"✅ {filename} → {project}/{subfolder}/{moved_folder}/",
                     C_SUCCESS,
                 )
 
@@ -666,6 +678,10 @@ class MainWindow(QMainWindow):
             original_dir = str(Path(original_path).parent)
             Path(original_dir).mkdir(parents=True, exist_ok=True)
             shutil.move(str(moved_path), original_path)
+            # 個別フォルダが空になったら削除
+            parent_folder = moved_path.parent
+            if parent_folder.is_dir() and not any(parent_folder.iterdir()):
+                parent_folder.rmdir()
             self._append_log(
                 f"↩ 元に戻しました: {moved_path.name} → {original_path}",
                 C_ACCENT_PURPLE,
