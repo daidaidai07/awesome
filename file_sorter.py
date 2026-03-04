@@ -775,6 +775,8 @@ class MainWindow(QMainWindow):
         self._settings = QSettings("FileSorter", "FileSorter")
         self._worker_thread: QThread | None = None
         self._undo_stack: list[tuple[str, str]] = []
+        self._last_dropped_files: list[str] = []
+        self._last_batch_undo: list[tuple[str, str]] = []
 
         # テーマ初期化
         saved_mode = self._settings.value("theme_mode", "dark")
@@ -908,7 +910,17 @@ class MainWindow(QMainWindow):
             "例: ワークスから受領した構造計算書、○○橋の現場写真 …"
         )
         self._comment_edit.textChanged.connect(self._update_comment_indicator)
+        self._comment_edit.returnPressed.connect(self._on_comment_send)
         input_row.addWidget(self._comment_edit, 1)
+
+        self._comment_send_btn = QPushButton("送信")
+        self._comment_send_btn.setObjectName("send_btn")
+        self._comment_send_btn.setFixedSize(56, 32)
+        self._comment_send_btn.setCursor(Qt.PointingHandCursor)
+        self._comment_send_btn.setToolTip("コメントを反映して再分類")
+        self._comment_send_btn.clicked.connect(self._on_comment_send)
+        self._comment_send_btn.setEnabled(False)
+        input_row.addWidget(self._comment_send_btn)
 
         self._comment_clear_btn = QPushButton("✕")
         self._comment_clear_btn.setObjectName("clear_btn")
@@ -1025,6 +1037,15 @@ class MainWindow(QMainWindow):
                 border: 1px solid {t.border}; border-radius: 8px;
                 padding: 8px 12px; font-size: 13px;
             }}
+            QPushButton#send_btn {{
+                background: {t.accent_blue}; color: #ffffff;
+                border: none; border-radius: 8px;
+                font-size: 12px; font-weight: bold;
+            }}
+            QPushButton#send_btn:hover {{ background: {t.accent_purple}; }}
+            QPushButton#send_btn:disabled {{
+                background: {t.dim}40; color: {t.dim};
+            }}
             QPushButton#clear_btn {{
                 background: {t.error}15; color: {t.error};
                 border: 1px solid {t.error}30; border-radius: 8px;
@@ -1110,13 +1131,18 @@ class MainWindow(QMainWindow):
     def _update_comment_indicator(self):
         t = self._theme
         text = self._comment_edit.text().strip()
+        has_last_files = bool(self._last_batch_undo)
         if text:
-            self._comment_badge.setText("✔ 入力済み（ドロップ時にAIへ送信）")
+            if has_last_files:
+                self._comment_badge.setText("✔ 入力済み（送信で再分類 / ドロップで新規分類）")
+            else:
+                self._comment_badge.setText("✔ 入力済み（ドロップ時にAIへ送信）")
             self._comment_badge.setStyleSheet(
                 f"color: {t.success}; font-size: 11px; font-weight: bold; "
                 f"border: none; background: transparent;"
             )
             self._comment_clear_btn.setVisible(True)
+            self._comment_send_btn.setEnabled(has_last_files)
         else:
             self._comment_badge.setText("任意 — 入力するとAIの分類精度が向上")
             self._comment_badge.setStyleSheet(
@@ -1124,6 +1150,7 @@ class MainWindow(QMainWindow):
                 f"border: none; background: transparent;"
             )
             self._comment_clear_btn.setVisible(False)
+            self._comment_send_btn.setEnabled(False)
 
     def _update_history_hint(self):
         """学習済み件数・ルール件数をヒント表示。"""
@@ -1229,6 +1256,9 @@ class MainWindow(QMainWindow):
         self._refresh_projects()
         self._status_label.setText(f"処理中… (0/{len(files)})")
 
+        self._last_dropped_files = list(files)
+        self._last_batch_undo = []
+
         user_comment = self._comment_edit.text().strip()
         if user_comment:
             self._append_log(f"💬 コメント反映: {user_comment}", self._theme.accent_purple)
@@ -1253,9 +1283,57 @@ class MainWindow(QMainWindow):
             self._worker_thread.quit()
             self._worker_thread.wait()
             self._worker_thread = None
-        self._comment_edit.clear()
         self._check_ollama()
         self._update_history_hint()
+        self._update_comment_indicator()
+
+    # ---- コメント送信（ドロップ後の再分類） ----
+
+    def _on_comment_send(self):
+        """直前にドロップしたファイルを、コメント付きで再分類する。"""
+        comment = self._comment_edit.text().strip()
+        if not comment or not self._last_batch_undo:
+            return
+
+        if self._worker_thread is not None and self._worker_thread.isRunning():
+            QMessageBox.warning(self, "処理中", "処理中です。完了をお待ちください。")
+            return
+
+        # 直前バッチのファイルを元に戻す
+        restored_files = []
+        for moved_to, original_path in reversed(self._last_batch_undo):
+            moved_path = Path(moved_to)
+            if not moved_path.exists():
+                self._append_log(
+                    f"⚠️ 再分類スキップ（ファイル不在）: {moved_to}",
+                    self._theme.warn,
+                )
+                continue
+            try:
+                Path(original_path).parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(moved_path), original_path)
+                parent_folder = moved_path.parent
+                if parent_folder.is_dir() and not any(parent_folder.iterdir()):
+                    parent_folder.rmdir()
+                restored_files.append(original_path)
+                # undo_stack からも除去
+                try:
+                    self._undo_stack.remove((moved_to, original_path))
+                except ValueError:
+                    pass
+            except Exception as e:
+                self._append_log(f"❌ 元に戻す操作に失敗: {e}", self._theme.error)
+
+        if not restored_files:
+            self._append_log("❌ 再分類するファイルがありません。", self._theme.error)
+            return
+
+        self._append_log(
+            f"🔄 コメント付きで {len(restored_files)} ファイルを再分類します",
+            self._theme.accent_blue,
+        )
+        # 再ドロップと同じ処理を実行
+        self._on_files_dropped(restored_files)
 
     # ---- 履歴保存 ----
 
@@ -1266,6 +1344,7 @@ class MainWindow(QMainWindow):
 
     def _record_undo(self, moved_to: str, original_path: str):
         self._undo_stack.append((moved_to, original_path))
+        self._last_batch_undo.append((moved_to, original_path))
 
     def _undo_last(self):
         if not self._undo_stack:
