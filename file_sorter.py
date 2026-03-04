@@ -55,7 +55,7 @@ from PySide6.QtWidgets import (
 # 定数
 # ---------------------------------------------------------------------------
 APP_NAME = "ファイル自動仕分けツール"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "gemma3:4b"
 OLLAMA_TIMEOUT = 60
@@ -179,9 +179,18 @@ def scan_projects(root: str) -> list[str]:
 # Ollama 呼び出し
 # ---------------------------------------------------------------------------
 
-def build_prompt(filename: str, content: str, projects: list[str]) -> str:
+def build_prompt(
+    filename: str, content: str, projects: list[str], user_comment: str = ""
+) -> str:
     content_display = content.strip() if content.strip() else "（読み取り不可）"
     project_list = "\n".join(f"- {p}" for p in projects) if projects else "（なし）"
+
+    comment_section = ""
+    if user_comment.strip():
+        comment_section = f"""
+## ユーザーからの補足コメント（分類の最重要ヒント）
+{user_comment.strip()}
+"""
 
     return f"""あなたはファイル整理の専門家です。以下の情報をもとに、ファイルの分類先を答えてください。
 
@@ -190,7 +199,7 @@ def build_prompt(filename: str, content: str, projects: list[str]) -> str:
 
 ## ファイルの内容（先頭抜粋）
 {content_display}
-
+{comment_section}
 ## 既存プロジェクトフォルダ一覧
 {project_list}
 
@@ -200,6 +209,7 @@ def build_prompt(filename: str, content: str, projects: list[str]) -> str:
   - 検討資料：自分たちが作成・編集する設計図・計算書・報告書・提案書など
   - 受領資料：発注者・他社・官庁から受け取った資料・データ・提供ファイルなど
   - その他：議事録・写真・メモ・分類が難しいもの
+- ユーザーからの補足コメントがある場合、それを最優先の判断材料として使うこと
 
 ## 回答形式（JSONのみ・余計な文字禁止）
 {{"project": "プロジェクト名またはunknown", "subfolder": "検討資料 or 受領資料 or その他"}}"""
@@ -282,10 +292,11 @@ class SortWorker(QObject):
     finished = Signal()
     undo_record = Signal(str, str)  # (moved_to, original_path)
 
-    def __init__(self, files: list[str], root_folder: str):
+    def __init__(self, files: list[str], root_folder: str, user_comment: str = ""):
         super().__init__()
         self.files = files
         self.root_folder = root_folder
+        self.user_comment = user_comment
 
     def run(self):
         projects = scan_projects(self.root_folder)
@@ -299,7 +310,7 @@ class SortWorker(QObject):
             content = extract_text(filepath)
 
             # Ollama 呼び出し
-            prompt = build_prompt(filename, content, projects)
+            prompt = build_prompt(filename, content, projects, self.user_comment)
             result = call_ollama(prompt)
 
             if result is None:
@@ -474,6 +485,21 @@ class MainWindow(QMainWindow):
         self._drop_zone.files_dropped.connect(self._on_files_dropped)
         root_layout.addWidget(self._drop_zone)
 
+        # コメント入力欄
+        comment_label = QLabel("💬 補足コメント（任意）:")
+        comment_label.setStyleSheet(f"color: {C_SUBTEXT}; font-size: 12px;")
+        root_layout.addWidget(comment_label)
+
+        self._comment_edit = QLineEdit()
+        self._comment_edit.setPlaceholderText(
+            "例: A社から受領した構造計算書、○○橋の現場写真 など"
+        )
+        self._comment_edit.setStyleSheet(
+            f"background: {C_PANEL}; color: {C_TEXT}; border: 1px solid {C_BORDER}; "
+            f"border-radius: 6px; padding: 6px 10px; font-size: 13px;"
+        )
+        root_layout.addWidget(self._comment_edit)
+
         # ステータス
         self._status_label = QLabel("待機中")
         self._status_label.setAlignment(Qt.AlignCenter)
@@ -593,9 +619,14 @@ class MainWindow(QMainWindow):
         self._refresh_projects()
         self._status_label.setText(f"処理中… (0/{len(files)})")
 
+        # コメント取得・ログ表示
+        user_comment = self._comment_edit.text().strip()
+        if user_comment:
+            self._append_log(f"💬 コメント: {user_comment}", C_ACCENT_PURPLE)
+
         # ワーカー起動
         self._worker_thread = QThread()
-        self._worker = SortWorker(files, self.root_folder)
+        self._worker = SortWorker(files, self.root_folder, user_comment)
         self._worker.moveToThread(self._worker_thread)
 
         self._worker.log_signal.connect(self._append_log)
@@ -611,6 +642,7 @@ class MainWindow(QMainWindow):
             self._worker_thread.quit()
             self._worker_thread.wait()
             self._worker_thread = None
+        self._comment_edit.clear()
         self._check_ollama()
 
     # ---- 元に戻す ----
