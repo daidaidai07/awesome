@@ -444,6 +444,10 @@ class SortWorker(QObject):
         self.root_folder = root_folder
         self.user_comment = user_comment
         self.t = theme or Theme()
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
 
     def _move_and_log(self, filepath: str, project: str, subfolder: str,
                       projects: list[str], subfolder_map: dict, method: str):
@@ -498,6 +502,11 @@ class SortWorker(QObject):
         )
 
         for i, filepath in enumerate(self.files, 1):
+            if self._cancelled:
+                self.status_signal.emit("⏹ 中断しました")
+                self.finished.emit()
+                return
+
             filename = Path(filepath).name
             self.status_signal.emit(f"処理中… ({i}/{total}) {filename}")
 
@@ -530,6 +539,11 @@ class SortWorker(QObject):
                 continue
 
             # ルール不一致・フォルダ名不一致 → AI分類
+            if self._cancelled:
+                self.status_signal.emit("⏹ 中断しました")
+                self.finished.emit()
+                return
+
             self.log_signal.emit(f"🔍 AI分類中: {filename}", self.t.subtext)
 
             prompt = build_prompt(
@@ -860,10 +874,6 @@ class MainWindow(QMainWindow):
         header_row = QHBoxLayout()
         header_row.setSpacing(0)
 
-        header = QLabel(APP_NAME)
-        header.setObjectName("header")
-        header_row.addWidget(header)
-
         header_row.addStretch()
 
         # ルール管理ボタン
@@ -883,12 +893,6 @@ class MainWindow(QMainWindow):
         header_row.addWidget(self._theme_btn)
 
         root.addLayout(header_row)
-
-        # サブタイトル
-        sub = QLabel(f"Powered by Ollama + {OLLAMA_MODEL}  |  完全ローカル処理")
-        sub.setObjectName("subtitle")
-        sub.setAlignment(Qt.AlignCenter)
-        root.addWidget(sub)
 
         # Ollama 接続バッジ
         self._ollama_badge = QLabel()
@@ -1001,11 +1005,26 @@ class MainWindow(QMainWindow):
         root.addSpacing(10)
 
         # ── ステータス ──
+        status_row = QHBoxLayout()
+        status_row.addStretch()
+
         self._status_label = QLabel("待機中")
         self._status_label.setObjectName("status")
         self._status_label.setAlignment(Qt.AlignCenter)
         self._status_label.setFixedHeight(24)
-        root.addWidget(self._status_label)
+        status_row.addWidget(self._status_label)
+
+        self._stop_btn = QPushButton("⏹ 停止")
+        self._stop_btn.setObjectName("stop_btn")
+        self._stop_btn.setFixedSize(64, 24)
+        self._stop_btn.setCursor(Qt.PointingHandCursor)
+        self._stop_btn.setToolTip("処理を中断して元に戻す")
+        self._stop_btn.clicked.connect(self._stop_processing)
+        self._stop_btn.setVisible(False)
+        status_row.addWidget(self._stop_btn)
+
+        status_row.addStretch()
+        root.addLayout(status_row)
 
         root.addSpacing(6)
 
@@ -1052,14 +1071,6 @@ class MainWindow(QMainWindow):
             QWidget {{
                 background: {t.bg}; color: {t.text};
                 font-family: 'Yu Gothic UI', 'Meiryo', 'Segoe UI', sans-serif;
-            }}
-
-            #header {{
-                color: {t.text}; font-size: 22px; font-weight: 800;
-                letter-spacing: 1px;
-            }}
-            #subtitle {{
-                color: {t.dim}; font-size: 11px; padding: 2px 0 4px 0;
             }}
 
             QPushButton#small_btn {{
@@ -1119,6 +1130,12 @@ class MainWindow(QMainWindow):
             #status {{
                 color: {t.accent_blue}; font-size: 13px; font-weight: bold;
             }}
+            QPushButton#stop_btn {{
+                background: {t.error}; color: #ffffff;
+                border: none; border-radius: 6px;
+                font-size: 11px; font-weight: bold;
+            }}
+            QPushButton#stop_btn:hover {{ background: {t.error}cc; }}
 
             QTextEdit#log {{
                 background: {t.panel}; color: {t.text};
@@ -1305,19 +1322,33 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "処理中", "処理中です。完了をお待ちください。")
             return
 
-        if not check_ollama_connection():
+        self._refresh_projects()
+
+        user_comment = self._comment_edit.text().strip()
+
+        # ルール・コメント直接マッチで処理できるかチェック
+        rules = load_rules(self.root_folder)
+        projects = scan_projects(self.root_folder)
+        subfolder_map = scan_all_subfolders(self.root_folder, projects)
+        has_direct = False
+        if user_comment:
+            has_direct = (
+                match_rule(user_comment, rules) is not None
+                or match_comment_to_project(user_comment, projects, subfolder_map) is not None
+            )
+
+        # 直接マッチできない場合のみ Ollama 必須
+        if not has_direct and not check_ollama_connection():
             self._check_ollama()
             self._append_log("❌ Ollama に接続できません。サーバーを起動してください。",
                              self._theme.error)
             return
 
-        self._refresh_projects()
         self._status_label.setText(f"処理中… (0/{len(files)})")
 
         self._last_dropped_files = list(files)
         self._last_batch_undo = []
 
-        user_comment = self._comment_edit.text().strip()
         if user_comment:
             self._append_log(f"💬 コメント反映: {user_comment}", self._theme.accent_purple)
 
@@ -1335,15 +1366,56 @@ class MainWindow(QMainWindow):
 
         self._worker_thread.started.connect(self._worker.run)
         self._worker_thread.start()
+        self._stop_btn.setVisible(True)
 
     def _on_worker_finished(self):
+        was_cancelled = self._worker is not None and self._worker._cancelled
         if self._worker_thread:
             self._worker_thread.quit()
             self._worker_thread.wait()
             self._worker_thread = None
+        self._worker = None
+        self._stop_btn.setVisible(False)
+        self._stop_btn.setEnabled(True)
+
+        if was_cancelled:
+            self._undo_batch(self._last_batch_undo)
+            self._last_batch_undo = []
+            self._append_log("⏹ 処理を中断し、移動済みファイルを元に戻しました。",
+                             self._theme.warn)
+
         self._check_ollama()
         self._update_history_hint()
         self._update_comment_indicator()
+
+    # ---- 処理停止 ----
+
+    def _stop_processing(self):
+        """処理を中断する。ワーカーにキャンセルフラグを立てる。"""
+        if self._worker is not None:
+            self._worker.cancel()
+            self._stop_btn.setEnabled(False)
+            self._status_label.setText("停止中…")
+
+    def _undo_batch(self, batch: list[tuple[str, str]]):
+        """バッチ内の移動を全て元に戻す。"""
+        for moved_to, original_path in reversed(batch):
+            moved_path = Path(moved_to)
+            if not moved_path.exists():
+                continue
+            try:
+                Path(original_path).parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(moved_path), original_path)
+                parent_folder = moved_path.parent
+                if parent_folder.is_dir() and not any(parent_folder.iterdir()):
+                    parent_folder.rmdir()
+                # undo_stack からも除去
+                try:
+                    self._undo_stack.remove((moved_to, original_path))
+                except ValueError:
+                    pass
+            except Exception:
+                pass
 
     # ---- コメント送信（ドロップ後の再分類） ----
 
