@@ -402,11 +402,33 @@ def get_file_mod_date(filepath: str) -> str:
 
 
 def move_file(filepath: str, dest_dir: str) -> str:
-    """ファイルを YYMMDD_ファイル名/ フォルダへ移動。日付はファイル更新日。"""
+    """ファイルまたはフォルダを移動する。
+    - ファイル: YYMMDD_ファイル名/ フォルダを作成してその中に移動
+    - フォルダ: YYMMDD_フォルダ名 にリネームして移動
+    """
     src = Path(filepath)
     date_prefix = get_file_mod_date(filepath)
-    folder_name = f"{date_prefix}_{src.stem}"
 
+    if src.is_dir():
+        # フォルダの場合: 日付プレフィックス付きでフォルダごと移動
+        folder_name = f"{date_prefix}_{src.name}"
+        target = Path(dest_dir) / folder_name
+
+        if target.exists():
+            counter = 2
+            while True:
+                candidate = Path(dest_dir) / f"{folder_name}_{counter}"
+                if not candidate.exists():
+                    target = candidate
+                    break
+                counter += 1
+
+        Path(dest_dir).mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(target))
+        return str(target)
+
+    # ファイルの場合: 日付フォルダを作成してその中に移動
+    folder_name = f"{date_prefix}_{src.stem}"
     file_folder = Path(dest_dir) / folder_name
 
     if file_folder.exists():
@@ -451,16 +473,19 @@ class SortWorker(QObject):
 
     def _move_and_log(self, filepath: str, project: str, subfolder: str,
                       projects: list[str], subfolder_map: dict, method: str):
-        """分類結果をもとにファイルを移動しログ出力する共通処理。"""
-        filename = Path(filepath).name
+        """分類結果をもとにファイル/フォルダを移動しログ出力する共通処理。"""
+        src = Path(filepath)
+        filename = src.name
+        is_dir = src.is_dir()
+        label = f"📁 {filename}" if is_dir else filename
 
         if project == "unknown" or project not in projects:
             dest_dir = str(Path(self.root_folder) / UNKNOWN_DIR)
             moved = move_file(filepath, dest_dir)
-            moved_folder = Path(moved).parent.name
+            moved_name = Path(moved).name
             self.undo_record.emit(moved, filepath)
             self.log_signal.emit(
-                f"⚠️ プロジェクト不明 → {UNKNOWN_DIR}/{moved_folder}/",
+                f"⚠️ プロジェクト不明 → {UNKNOWN_DIR}/{moved_name}/",
                 self.t.warn,
             )
             return
@@ -476,12 +501,12 @@ class SortWorker(QObject):
             dest_dir = str(Path(self.root_folder) / project)
 
         moved = move_file(filepath, dest_dir)
-        moved_folder = Path(moved).parent.name
+        moved_name = Path(moved).name
         self.undo_record.emit(moved, filepath)
 
-        display_path = f"{project}/{subfolder}/{moved_folder}/" if subfolder else f"{project}/{moved_folder}/"
+        display_path = f"{project}/{subfolder}/{moved_name}/" if subfolder else f"{project}/{moved_name}/"
         self.log_signal.emit(
-            f"✅ {filename} → {display_path}  [{method}]", self.t.success,
+            f"✅ {label} → {display_path}  [{method}]", self.t.success,
         )
         self.history_record.emit(self.user_comment, project, subfolder)
 
@@ -555,10 +580,10 @@ class SortWorker(QObject):
             if result is None:
                 dest_dir = str(Path(self.root_folder) / UNKNOWN_DIR)
                 moved = move_file(filepath, dest_dir)
-                moved_folder = Path(moved).parent.name
+                moved_name = Path(moved).name
                 self.undo_record.emit(moved, filepath)
                 self.log_signal.emit(
-                    f"⚠️ AI応答を解析できません → {UNKNOWN_DIR}/{moved_folder}/",
+                    f"⚠️ AI応答を解析できません → {UNKNOWN_DIR}/{moved_name}/",
                     self.t.warn,
                 )
                 continue
@@ -789,7 +814,7 @@ class DropZone(QFrame):
         self._icon.setStyleSheet("font-size: 30px; border: none; background: transparent;")
         layout.addWidget(self._icon)
 
-        self._text = QLabel("ここにファイルをドロップ（複数可）")
+        self._text = QLabel("ここにファイル / フォルダをドロップ（複数可）")
         self._text.setAlignment(Qt.AlignCenter)
         self._text.setStyleSheet(
             f"color: {self.t.subtext}; font-size: 13px; font-weight: bold; "
@@ -828,9 +853,12 @@ class DropZone(QFrame):
     def dropEvent(self, event: QDropEvent):
         self._update_style(False)
         urls: list[QUrl] = event.mimeData().urls()
-        files = [u.toLocalFile() for u in urls if Path(u.toLocalFile()).is_file()]
-        if files:
-            self.files_dropped.emit(files)
+        paths = [
+            u.toLocalFile() for u in urls
+            if Path(u.toLocalFile()).is_file() or Path(u.toLocalFile()).is_dir()
+        ]
+        if paths:
+            self.files_dropped.emit(paths)
 
 
 # ---------------------------------------------------------------------------
