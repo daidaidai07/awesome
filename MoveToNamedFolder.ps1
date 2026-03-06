@@ -32,13 +32,21 @@ try {
             try {
                 $window = $windows.Item($i)
                 if (-not $window) { continue }
+                # フォルダパスを取得（通常のExplorerウィンドウ or デスクトップ）
+                $windowFolderPath = $null
                 $locationUrl = $window.LocationURL
-                if (-not $locationUrl) { continue }
-                try {
-                    $uri = New-Object System.Uri($locationUrl)
-                    $folderPath = $uri.LocalPath.TrimEnd('\').ToLower()
-                } catch { continue }
-                if ($folderPath -ne $normalizedParent) { continue }
+                if ($locationUrl) {
+                    try {
+                        $uri = New-Object System.Uri($locationUrl)
+                        $windowFolderPath = $uri.LocalPath.TrimEnd('\').ToLower()
+                    } catch { }
+                }
+                if (-not $windowFolderPath) {
+                    try {
+                        $windowFolderPath = $window.Document.Folder.Self.Path.TrimEnd('\').ToLower()
+                    } catch { }
+                }
+                if (-not $windowFolderPath -or $windowFolderPath -ne $normalizedParent) { continue }
                 try {
                     $items = $window.Document.SelectedItems()
                 } catch { continue }
