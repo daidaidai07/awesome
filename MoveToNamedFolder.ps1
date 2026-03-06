@@ -32,21 +32,6 @@ try {
             try {
                 $window = $windows.Item($i)
                 if (-not $window) { continue }
-                # フォルダパスを取得（通常のExplorerウィンドウ or デスクトップ）
-                $windowFolderPath = $null
-                $locationUrl = $window.LocationURL
-                if ($locationUrl) {
-                    try {
-                        $uri = New-Object System.Uri($locationUrl)
-                        $windowFolderPath = $uri.LocalPath.TrimEnd('\').ToLower()
-                    } catch { }
-                }
-                if (-not $windowFolderPath) {
-                    try {
-                        $windowFolderPath = $window.Document.Folder.Self.Path.TrimEnd('\').ToLower()
-                    } catch { }
-                }
-                if (-not $windowFolderPath -or $windowFolderPath -ne $normalizedParent) { continue }
                 try {
                     $items = $window.Document.SelectedItems()
                 } catch { continue }
@@ -68,7 +53,23 @@ try {
                         break
                     }
                     if ($folderMatch.Count -eq 0) {
-                        $folderMatch = $tempList
+                        # フォルダパスで一致確認（フォールバック用）
+                        $windowFolderPath = $null
+                        $locationUrl = $window.LocationURL
+                        if ($locationUrl) {
+                            try {
+                                $uri = New-Object System.Uri($locationUrl)
+                                $windowFolderPath = $uri.LocalPath.TrimEnd('\').ToLower()
+                            } catch { }
+                        }
+                        if (-not $windowFolderPath) {
+                            try {
+                                $windowFolderPath = $window.Document.Folder.Self.Path.TrimEnd('\').ToLower()
+                            } catch { }
+                        }
+                        if ($windowFolderPath -eq $normalizedParent) {
+                            $folderMatch = $tempList
+                        }
                     }
                 }
             } catch { continue }
