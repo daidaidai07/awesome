@@ -1,86 +1,44 @@
 ﻿Add-Type -AssemblyName System.Windows.Forms
 
+$clickedPath = $args[0]
+if (-not $clickedPath -or -not (Test-Path -LiteralPath $clickedPath)) {
+    [Environment]::Exit(0)
+}
+
+$parentFolder = if ((Get-Item -LiteralPath $clickedPath).PSIsContainer) {
+    (Get-Item -LiteralPath $clickedPath).Parent.FullName
+} else {
+    [System.IO.Path]::GetDirectoryName($clickedPath)
+}
+
+# 一時キューに自分のパスを書き込む（複数選択時、各インスタンスが書き込む）
+$queueDir = Join-Path $env:TEMP "FileOrganizer_Named"
+New-Item -ItemType Directory -Path $queueDir -Force -ErrorAction SilentlyContinue | Out-Null
+[System.IO.File]::WriteAllText((Join-Path $queueDir "$PID.txt"), $clickedPath)
+
+# マスターインスタンスになる（最初の1つだけが処理を続行）
 $mutex = New-Object System.Threading.Mutex($false, "Global\FileOrganizer_Named")
-if (-not $mutex.WaitOne(1000)) {
+if (-not $mutex.WaitOne(0)) {
     [Environment]::Exit(0)
 }
 
 try {
-    $clickedPath = $args[0]
-    if (-not $clickedPath -or -not (Test-Path -LiteralPath $clickedPath)) {
-        return
-    }
+    # 他のインスタンスがキューに書き込む時間を待つ
+    Start-Sleep -Milliseconds 800
 
-    $parentFolder = if ((Get-Item -LiteralPath $clickedPath).PSIsContainer) {
-        (Get-Item -LiteralPath $clickedPath).Parent.FullName
-    } else {
-        [System.IO.Path]::GetDirectoryName($clickedPath)
-    }
+    # キューからすべてのパスを収集（古いファイルは除外）
+    $now = [DateTime]::Now
+    $selectedItems = @(Get-ChildItem $queueDir -Filter "*.txt" -ErrorAction SilentlyContinue |
+        Where-Object { ($now - $_.LastWriteTime).TotalSeconds -lt 5 } |
+        ForEach-Object {
+            $p = [System.IO.File]::ReadAllText($_.FullName).Trim()
+            Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+            $p
+        } | Where-Object { $_ -ne '' -and (Test-Path -LiteralPath $_) })
 
-    # Explorer COM経由で選択中の全アイテムを取得
-    $selectedItems = @()
-    Start-Sleep -Milliseconds 200
-    try {
-        $shell = New-Object -ComObject Shell.Application
-        $windows = $shell.Windows()
-        $windowCount = $windows.Count
-        $normalizedClicked = [System.IO.Path]::GetFullPath($clickedPath).ToLower()
-        $normalizedParent = $parentFolder.TrimEnd('\').ToLower()
-        $bestMatch = @()
-        $folderMatch = @()
-        for ($i = 0; $i -lt $windowCount; $i++) {
-            try {
-                $window = $windows.Item($i)
-                if (-not $window) { continue }
-                try {
-                    $items = $window.Document.SelectedItems()
-                } catch { continue }
-                if (-not $items -or $items.Count -eq 0) { continue }
-                $tempList = @()
-                $clickedFound = $false
-                for ($j = 0; $j -lt $items.Count; $j++) {
-                    try {
-                        $item = $items.Item($j)
-                        $tempList += $item.Path
-                        if ([System.IO.Path]::GetFullPath($item.Path).ToLower() -eq $normalizedClicked) {
-                            $clickedFound = $true
-                        }
-                    } catch { continue }
-                }
-                if ($tempList.Count -gt 0) {
-                    if ($clickedFound) {
-                        $bestMatch = $tempList
-                        break
-                    }
-                    if ($folderMatch.Count -eq 0) {
-                        # フォルダパスで一致確認（フォールバック用）
-                        $windowFolderPath = $null
-                        $locationUrl = $window.LocationURL
-                        if ($locationUrl) {
-                            try {
-                                $uri = New-Object System.Uri($locationUrl)
-                                $windowFolderPath = $uri.LocalPath.TrimEnd('\').ToLower()
-                            } catch { }
-                        }
-                        if (-not $windowFolderPath) {
-                            try {
-                                $windowFolderPath = $window.Document.Folder.Self.Path.TrimEnd('\').ToLower()
-                            } catch { }
-                        }
-                        if ($windowFolderPath -eq $normalizedParent) {
-                            $folderMatch = $tempList
-                        }
-                    }
-                }
-            } catch { continue }
-        }
-        if ($bestMatch.Count -gt 0) {
-            $selectedItems = $bestMatch
-        } elseif ($folderMatch.Count -gt 0) {
-            $selectedItems = $folderMatch
-        }
-        if ($shell) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null }
-    } catch { }
+    # キューディレクトリ掃除
+    Get-ChildItem $queueDir -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    Remove-Item $queueDir -Force -ErrorAction SilentlyContinue
 
     if ($selectedItems.Count -eq 0) {
         $selectedItems = @($clickedPath)
