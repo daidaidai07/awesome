@@ -10,9 +10,13 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: コンテキストメニューのレジストリ削除
+:: コンテキストメニューのレジストリ削除（ファイル用）
 reg delete "HKCR\*\shell\MoveToSameNameFolder" /f >nul 2>&1
 reg delete "HKCR\*\shell\MoveToNamedFolder" /f >nul 2>&1
+
+:: コンテキストメニューのレジストリ削除（フォルダ用）
+reg delete "HKCR\Directory\shell\MoveToSameNameFolder" /f >nul 2>&1
+reg delete "HKCR\Directory\shell\MoveToNamedFolder" /f >nul 2>&1
 
 :: スクリプトフォルダ削除
 if exist "%USERPROFILE%\MoveToSameNameFolder" rmdir /s /q "%USERPROFILE%\MoveToSameNameFolder"
@@ -28,7 +32,7 @@ start explorer.exe
 echo.
 echo アンインストールが完了しました。
 echo 右クリックメニューから以下を削除しました：
-echo   - 同名フォルダを作成して格納
-echo   - フォルダ名を指定して格納
+echo   - 個別のフォルダを作成
+echo   - まとめたフォルダを作成
 echo.
 pause

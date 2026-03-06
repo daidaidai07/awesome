@@ -22,15 +22,25 @@ copy /Y "%~dp0MoveToNamedFolder.ps1" "%INSTALL_DIR%\" >nul
 :: ダウンロードブロック解除（Mark of the Web 除去）
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Unblock-File -Path '%INSTALL_DIR%\MoveToSameNameFolder.ps1'; Unblock-File -Path '%INSTALL_DIR%\MoveToNamedFolder.ps1'"
 
-:: ツール①「同名フォルダを作成して格納」レジストリ登録
-reg add "HKCR\*\shell\MoveToSameNameFolder" /ve /d "同名フォルダを作成して格納" /f >nul
+:: ツール①「個別のフォルダを作成」レジストリ登録（ファイル用）
+reg add "HKCR\*\shell\MoveToSameNameFolder" /ve /d "個別のフォルダを作成" /f >nul
 reg add "HKCR\*\shell\MoveToSameNameFolder" /v "Icon" /d "shell32.dll,3" /f >nul
-reg add "HKCR\*\shell\MoveToSameNameFolder\command" /ve /d "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%INSTALL_DIR%\MoveToSameNameFolder.ps1\" \"%%1\"" /f >nul
+reg add "HKCR\*\shell\MoveToSameNameFolder\command" /ve /d "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%INSTALL_DIR%\MoveToSameNameFolder.ps1\" \"%%1\"" /f >nul
 
-:: ツール②「フォルダ名を指定して格納」レジストリ登録
-reg add "HKCR\*\shell\MoveToNamedFolder" /ve /d "フォルダ名を指定して格納" /f >nul
+:: ツール①「個別のフォルダを作成」レジストリ登録（フォルダ用）
+reg add "HKCR\Directory\shell\MoveToSameNameFolder" /ve /d "個別のフォルダを作成" /f >nul
+reg add "HKCR\Directory\shell\MoveToSameNameFolder" /v "Icon" /d "shell32.dll,3" /f >nul
+reg add "HKCR\Directory\shell\MoveToSameNameFolder\command" /ve /d "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%INSTALL_DIR%\MoveToSameNameFolder.ps1\" \"%%1\"" /f >nul
+
+:: ツール②「まとめたフォルダを作成」レジストリ登録（ファイル用）
+reg add "HKCR\*\shell\MoveToNamedFolder" /ve /d "まとめたフォルダを作成" /f >nul
 reg add "HKCR\*\shell\MoveToNamedFolder" /v "Icon" /d "shell32.dll,4" /f >nul
-reg add "HKCR\*\shell\MoveToNamedFolder\command" /ve /d "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%INSTALL_DIR%\MoveToNamedFolder.ps1\" \"%%1\"" /f >nul
+reg add "HKCR\*\shell\MoveToNamedFolder\command" /ve /d "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%INSTALL_DIR%\MoveToNamedFolder.ps1\" \"%%1\"" /f >nul
+
+:: ツール②「まとめたフォルダを作成」レジストリ登録（フォルダ用）
+reg add "HKCR\Directory\shell\MoveToNamedFolder" /ve /d "まとめたフォルダを作成" /f >nul
+reg add "HKCR\Directory\shell\MoveToNamedFolder" /v "Icon" /d "shell32.dll,4" /f >nul
+reg add "HKCR\Directory\shell\MoveToNamedFolder\command" /ve /d "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%INSTALL_DIR%\MoveToNamedFolder.ps1\" \"%%1\"" /f >nul
 
 :: Windows 11 従来メニュー有効化
 reg add "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32" /ve /d "" /f >nul
@@ -43,7 +53,7 @@ start explorer.exe
 echo.
 echo インストールが完了しました。
 echo 右クリックメニューに以下が追加されました：
-echo   - 同名フォルダを作成して格納
-echo   - フォルダ名を指定して格納
+echo   - 個別のフォルダを作成
+echo   - まとめたフォルダを作成
 echo.
 pause
