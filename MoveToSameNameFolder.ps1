@@ -1,9 +1,14 @@
 ﻿Add-Type -AssemblyName System.Windows.Forms
 
+$mutex = New-Object System.Threading.Mutex($false, "Global\FileOrganizer_Individual")
+if (-not $mutex.WaitOne(1000)) {
+    [Environment]::Exit(0)
+}
+
 try {
     $clickedPath = $args[0]
     if (-not $clickedPath -or -not (Test-Path -LiteralPath $clickedPath)) {
-        [Environment]::Exit(0)
+        return
     }
 
     $parentFolder = if ((Get-Item -LiteralPath $clickedPath).PSIsContainer) {
@@ -12,7 +17,7 @@ try {
         [System.IO.Path]::GetDirectoryName($clickedPath)
     }
 
-    # Explorer COM経由で選択中の全アイテムを取得（ファイル＋フォルダ）
+    # Explorer COM経由で選択中の全アイテムを取得
     $selectedItems = @()
     try {
         $shell = New-Object -ComObject Shell.Application
@@ -24,66 +29,145 @@ try {
                 if (-not $window) { continue }
                 $locationUrl = $window.LocationURL
                 if (-not $locationUrl) { continue }
-
                 $uri = New-Object System.Uri($locationUrl)
                 $folderPath = $uri.LocalPath.TrimEnd('\')
-
                 if ($folderPath -ne $parentFolder.TrimEnd('\')) { continue }
-
                 $items = $window.Document.SelectedItems()
                 if (-not $items -or $items.Count -eq 0) { continue }
-
-                # クリックされたアイテムが選択一覧にあるか確認
                 $tempList = @()
                 $clickedFound = $false
                 for ($j = 0; $j -lt $items.Count; $j++) {
                     $item = $items.Item($j)
                     $tempList += $item.Path
-                    if ($item.Path -eq $clickedPath) {
-                        $clickedFound = $true
-                    }
+                    if ($item.Path -eq $clickedPath) { $clickedFound = $true }
                 }
-
                 if ($clickedFound -and $tempList.Count -gt 0) {
                     $selectedItems = $tempList
                     break
                 }
-            } catch {
-                continue
-            }
+            } catch { continue }
         }
-        if ($shell) {
-            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null
-        }
+        if ($shell) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null }
     } catch { }
 
     if ($selectedItems.Count -eq 0) {
         $selectedItems = @($clickedPath)
     }
 
+    # 命名規則選択ダイアログ
+    function Show-NamingDialog {
+        $form = New-Object System.Windows.Forms.Form
+        $form.Text = "個別のフォルダを作成"
+        $form.Size = New-Object System.Drawing.Size(320, 240)
+        $form.StartPosition = "CenterScreen"
+        $form.FormBorderStyle = "FixedDialog"
+        $form.MaximizeBox = $false
+        $form.MinimizeBox = $false
+        $form.TopMost = $true
+
+        $label = New-Object System.Windows.Forms.Label
+        $label.Text = "命名規則を選択してください："
+        $label.Location = New-Object System.Drawing.Point(15, 15)
+        $label.Size = New-Object System.Drawing.Size(280, 20)
+
+        $radio1 = New-Object System.Windows.Forms.RadioButton
+        $radio1.Text = "先頭に日付 (260303_)"
+        $radio1.Location = New-Object System.Drawing.Point(25, 42)
+        $radio1.Size = New-Object System.Drawing.Size(260, 24)
+        $radio1.Checked = $true
+
+        $radio2 = New-Object System.Windows.Forms.RadioButton
+        $radio2.Text = "末尾に日付 (_260303)"
+        $radio2.Location = New-Object System.Drawing.Point(25, 68)
+        $radio2.Size = New-Object System.Drawing.Size(260, 24)
+
+        $radio3 = New-Object System.Windows.Forms.RadioButton
+        $radio3.Text = "先頭に番号 (01_, 02_...)"
+        $radio3.Location = New-Object System.Drawing.Point(25, 94)
+        $radio3.Size = New-Object System.Drawing.Size(260, 24)
+
+        $radio4 = New-Object System.Windows.Forms.RadioButton
+        $radio4.Text = "なし"
+        $radio4.Location = New-Object System.Drawing.Point(25, 120)
+        $radio4.Size = New-Object System.Drawing.Size(260, 24)
+
+        $okButton = New-Object System.Windows.Forms.Button
+        $okButton.Text = "OK"
+        $okButton.Size = New-Object System.Drawing.Size(80, 28)
+        $okButton.Location = New-Object System.Drawing.Point(70, 160)
+        $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
+
+        $cancelButton = New-Object System.Windows.Forms.Button
+        $cancelButton.Text = "キャンセル"
+        $cancelButton.Size = New-Object System.Drawing.Size(80, 28)
+        $cancelButton.Location = New-Object System.Drawing.Point(160, 160)
+        $cancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+
+        $form.Controls.AddRange(@($label, $radio1, $radio2, $radio3, $radio4, $okButton, $cancelButton))
+        $form.AcceptButton = $okButton
+        $form.CancelButton = $cancelButton
+
+        $dialogResult = $form.ShowDialog()
+        $mode = $null
+        if ($dialogResult -eq [System.Windows.Forms.DialogResult]::OK) {
+            if ($radio1.Checked) { $mode = "DatePrefix" }
+            if ($radio2.Checked) { $mode = "DateSuffix" }
+            if ($radio3.Checked) { $mode = "NumberPrefix" }
+            if ($radio4.Checked) { $mode = "None" }
+        }
+        $form.Dispose()
+        return $mode
+    }
+
+    # 命名規則を適用する関数
+    function Get-FormattedName {
+        param([string]$Name, [string]$Mode, [datetime]$Date, [int]$Number)
+        switch ($Mode) {
+            "DatePrefix" {
+                if ($Name -match '^\d{8}_' -or $Name -match '^\d{6}_') { return $Name }
+                return $Date.ToString("yyMMdd") + "_" + $Name
+            }
+            "DateSuffix" {
+                if ($Name -match '_\d{8}$' -or $Name -match '_\d{6}$') { return $Name }
+                return $Name + "_" + $Date.ToString("yyMMdd")
+            }
+            "NumberPrefix" {
+                return $Number.ToString("00") + "_" + $Name
+            }
+            "None" {
+                return $Name
+            }
+        }
+        return $Name
+    }
+
+    $namingMode = Show-NamingDialog
+    if (-not $namingMode) { return }
+
     $successCount = 0
     $errorCount = 0
     $errorMessages = @()
+    $counter = 0
 
     foreach ($itemPath in $selectedItems) {
+        $counter++
         try {
             $item = Get-Item -LiteralPath $itemPath
             $itemName = $item.Name
             $directory = if ($item.PSIsContainer) { $item.Parent.FullName } else { $item.DirectoryName }
 
-            # 日付判定（YYYYMMDD_ または YYMMDD_ が先頭にあるか）
-            $hasDate = $itemName -match '^\d{8}_' -or $itemName -match '^\d{6}_'
-
             if ($item.PSIsContainer) {
-                # === フォルダの場合：日付プレフィックスを付けてリネーム ===
-                if ($hasDate) {
+                # === フォルダ：リネームのみ ===
+                if ($namingMode -eq "None") {
                     $successCount++
                     continue
                 }
-                $datePrefix = $item.LastWriteTime.ToString("yyMMdd")
-                $newFolderName = "${datePrefix}_${itemName}"
+                $newFolderName = Get-FormattedName -Name $itemName -Mode $namingMode -Date $item.LastWriteTime -Number $counter
+                if ($newFolderName -eq $itemName) {
+                    $successCount++
+                    continue
+                }
                 $destPath = Join-Path $directory $newFolderName
-
                 if (Test-Path -LiteralPath $destPath) {
                     $result = [System.Windows.Forms.MessageBox]::Show(
                         "「${newFolderName}」は既に存在します。スキップしますか？",
@@ -91,23 +175,15 @@ try {
                         [System.Windows.Forms.MessageBoxButtons]::YesNo,
                         [System.Windows.Forms.MessageBoxIcon]::Question
                     )
-                    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) {
-                        continue
-                    }
+                    if ($result -eq [System.Windows.Forms.DialogResult]::Yes) { continue }
                 }
-
                 Rename-Item -LiteralPath $itemPath -NewName $newFolderName
                 $successCount++
             } else {
-                # === ファイルの場合：同名フォルダを作成して格納 ===
+                # === ファイル：フォルダ作成＋移動 ===
                 $baseName = $item.BaseName
                 $extension = $item.Extension
-
-                $newBaseName = $baseName
-                if (-not $hasDate) {
-                    $datePrefix = $item.LastWriteTime.ToString("yyMMdd")
-                    $newBaseName = "${datePrefix}_${baseName}"
-                }
+                $newBaseName = Get-FormattedName -Name $baseName -Mode $namingMode -Date $item.LastWriteTime -Number $counter
 
                 # フォルダ作成
                 $folderPath = Join-Path $directory $newBaseName
@@ -127,9 +203,7 @@ try {
                         [System.Windows.Forms.MessageBoxButtons]::YesNo,
                         [System.Windows.Forms.MessageBoxIcon]::Question
                     )
-                    if ($result -eq [System.Windows.Forms.DialogResult]::No) {
-                        continue
-                    }
+                    if ($result -eq [System.Windows.Forms.DialogResult]::No) { continue }
                     Remove-Item -LiteralPath $destPath -Force
                 }
 
@@ -152,5 +226,7 @@ try {
 } catch {
     [System.Windows.Forms.MessageBox]::Show("予期しないエラー: $($_.Exception.Message)", "エラー", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
 } finally {
+    try { $mutex.ReleaseMutex() } catch { }
+    try { $mutex.Dispose() } catch { }
     [Environment]::Exit(0)
 }
