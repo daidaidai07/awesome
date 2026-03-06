@@ -19,33 +19,56 @@ try {
 
     # Explorer COM経由で選択中の全アイテムを取得
     $selectedItems = @()
+    Start-Sleep -Milliseconds 200
     try {
         $shell = New-Object -ComObject Shell.Application
         $windows = $shell.Windows()
         $windowCount = $windows.Count
+        $normalizedClicked = [System.IO.Path]::GetFullPath($clickedPath).ToLower()
+        $normalizedParent = $parentFolder.TrimEnd('\').ToLower()
+        $bestMatch = @()
+        $folderMatch = @()
         for ($i = 0; $i -lt $windowCount; $i++) {
             try {
                 $window = $windows.Item($i)
                 if (-not $window) { continue }
                 $locationUrl = $window.LocationURL
                 if (-not $locationUrl) { continue }
-                $uri = New-Object System.Uri($locationUrl)
-                $folderPath = $uri.LocalPath.TrimEnd('\')
-                if ($folderPath -ne $parentFolder.TrimEnd('\')) { continue }
-                $items = $window.Document.SelectedItems()
+                try {
+                    $uri = New-Object System.Uri($locationUrl)
+                    $folderPath = $uri.LocalPath.TrimEnd('\').ToLower()
+                } catch { continue }
+                if ($folderPath -ne $normalizedParent) { continue }
+                try {
+                    $items = $window.Document.SelectedItems()
+                } catch { continue }
                 if (-not $items -or $items.Count -eq 0) { continue }
                 $tempList = @()
                 $clickedFound = $false
                 for ($j = 0; $j -lt $items.Count; $j++) {
-                    $item = $items.Item($j)
-                    $tempList += $item.Path
-                    if ($item.Path -eq $clickedPath) { $clickedFound = $true }
+                    try {
+                        $item = $items.Item($j)
+                        $tempList += $item.Path
+                        if ([System.IO.Path]::GetFullPath($item.Path).ToLower() -eq $normalizedClicked) {
+                            $clickedFound = $true
+                        }
+                    } catch { continue }
                 }
-                if ($clickedFound -and $tempList.Count -gt 0) {
-                    $selectedItems = $tempList
-                    break
+                if ($tempList.Count -gt 0) {
+                    if ($clickedFound) {
+                        $bestMatch = $tempList
+                        break
+                    }
+                    if ($folderMatch.Count -eq 0) {
+                        $folderMatch = $tempList
+                    }
                 }
             } catch { continue }
+        }
+        if ($bestMatch.Count -gt 0) {
+            $selectedItems = $bestMatch
+        } elseif ($folderMatch.Count -gt 0) {
+            $selectedItems = $folderMatch
         }
         if ($shell) { [System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) | Out-Null }
     } catch { }
@@ -80,13 +103,13 @@ try {
         $ruleLabel.Size = New-Object System.Drawing.Size(280, 20)
 
         $radio1 = New-Object System.Windows.Forms.RadioButton
-        $radio1.Text = "先頭に日付 (260303_)"
+        $radio1.Text = "先頭に日付 (YYMMDD_)"
         $radio1.Location = New-Object System.Drawing.Point(25, 74)
         $radio1.Size = New-Object System.Drawing.Size(280, 24)
         $radio1.Checked = $true
 
         $radio2 = New-Object System.Windows.Forms.RadioButton
-        $radio2.Text = "末尾に日付 (_260303)"
+        $radio2.Text = "末尾に日付 (_YYMMDD)"
         $radio2.Location = New-Object System.Drawing.Point(25, 100)
         $radio2.Size = New-Object System.Drawing.Size(280, 24)
 
