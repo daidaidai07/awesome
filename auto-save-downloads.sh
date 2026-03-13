@@ -58,9 +58,13 @@ while read -r filename; do
     # 日付プレフィックス (YYMMDD)
     date_prefix=$(date +%y%m%d)
 
-    # 既に日付プレフィックスが付いている場合はスキップ
+    # 既に日付プレフィックス (YYMMDD_) が付いている場合は除去してから処理
     if [[ "$filename" =~ ^[0-9]{6}_ ]]; then
-        continue
+        filename="${filename#??????_}"
+        basename_no_ext="${filename%.*}"
+        if [ "$basename_no_ext" = "$filename" ]; then
+            basename_no_ext="$filename"
+        fi
     fi
 
     # 保存先フォルダを作成
