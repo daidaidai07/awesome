@@ -8,8 +8,8 @@
 #   デフォルトは ~/Downloads
 #
 # 保存形式:
-#   example.pdf         → Downloads/example/example.pdf
-#   260313_example.pdf  → Downloads/example/260313_example.pdf (フォルダ名から日付除去)
+#   example.pdf         → Downloads/YYMMDD_example/example.pdf
+#   260313_example.pdf  → Downloads/YYMMDD_example/260313_example.pdf (日付重複を防止)
 #
 # 依存: inotify-tools (sudo apt install inotify-tools)
 
@@ -59,14 +59,14 @@ while read -r filename; do
     # 日付プレフィックス (YYMMDD)
     date_prefix=$(date +%y%m%d)
 
-    # フォルダ名用: ファイル名に日付プレフィックス (YYMMDD_) が付いている場合は除去
-    folder_name="$basename_no_ext"
+    # フォルダ名用: ファイル名に日付プレフィックス (YYMMDD_) が付いている場合は除去して重複防止
+    folder_base="$basename_no_ext"
     if [[ "$basename_no_ext" =~ ^[0-9]{6}_ ]]; then
-        folder_name="${basename_no_ext#??????_}"
+        folder_base="${basename_no_ext#??????_}"
     fi
 
-    # 保存先フォルダを作成
-    dest_dir="$WATCH_DIR/$folder_name"
+    # 保存先フォルダを作成（必ず日付プレフィックスを付与）
+    dest_dir="$WATCH_DIR/${date_prefix}_${folder_base}"
     mkdir -p "$dest_dir"
 
     # 保存先ファイルパス（ファイル名はそのまま維持）
