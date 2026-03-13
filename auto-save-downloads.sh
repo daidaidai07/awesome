@@ -8,7 +8,8 @@
 #   デフォルトは ~/Downloads
 #
 # 保存形式:
-#   example.pdf → Downloads/example/YYMMDD_example.pdf
+#   example.pdf         → Downloads/example/example.pdf
+#   260313_example.pdf  → Downloads/example/260313_example.pdf (フォルダ名から日付除去)
 #
 # 依存: inotify-tools (sudo apt install inotify-tools)
 
@@ -58,31 +59,28 @@ while read -r filename; do
     # 日付プレフィックス (YYMMDD)
     date_prefix=$(date +%y%m%d)
 
-    # 既に日付プレフィックス (YYMMDD_) が付いている場合は除去してから処理
-    if [[ "$filename" =~ ^[0-9]{6}_ ]]; then
-        filename="${filename#??????_}"
-        basename_no_ext="${filename%.*}"
-        if [ "$basename_no_ext" = "$filename" ]; then
-            basename_no_ext="$filename"
-        fi
+    # フォルダ名用: ファイル名に日付プレフィックス (YYMMDD_) が付いている場合は除去
+    folder_name="$basename_no_ext"
+    if [[ "$basename_no_ext" =~ ^[0-9]{6}_ ]]; then
+        folder_name="${basename_no_ext#??????_}"
     fi
 
     # 保存先フォルダを作成
-    dest_dir="$WATCH_DIR/$basename_no_ext"
+    dest_dir="$WATCH_DIR/$folder_name"
     mkdir -p "$dest_dir"
 
-    # 保存先ファイルパス
-    dest_file="$dest_dir/${date_prefix}_${filename}"
+    # 保存先ファイルパス（ファイル名はそのまま維持）
+    dest_file="$dest_dir/${filename}"
 
     # 同名ファイルが既に存在する場合は連番を付与
     if [ -f "$dest_file" ]; then
         counter=1
         ext="${filename##*.}"
         name_without_ext="${filename%.*}"
-        while [ -f "$dest_dir/${date_prefix}_${name_without_ext}_${counter}.${ext}" ]; do
+        while [ -f "$dest_dir/${name_without_ext}_${counter}.${ext}" ]; do
             ((counter++))
         done
-        dest_file="$dest_dir/${date_prefix}_${name_without_ext}_${counter}.${ext}"
+        dest_file="$dest_dir/${name_without_ext}_${counter}.${ext}"
     fi
 
     mv "$filepath" "$dest_file"
