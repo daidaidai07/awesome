@@ -7,8 +7,9 @@
 #   .\auto-save-downloads.ps1 -WatchDir "C:\Users\you\Downloads"
 #
 # 保存形式:
-#   example.pdf         → Downloads\YYMMDD_example\example.pdf
-#   260313_example.pdf  → Downloads\YYMMDD_example\260313_example.pdf (日付重複を防止)
+#   example.pdf           → Downloads\YYMMDD_example\example.pdf
+#   260313_example.pdf    → Downloads\260313_example\260313_example.pdf (YYMMDD_プレフィックスを流用)
+#   20260313_example.pdf  → Downloads\260313_example\20260313_example.pdf (YYYYMMDD_→YYMMDD_に変換)
 #
 # 追加インストール不要（Windows標準のFileSystemWatcherを使用）
 
@@ -51,9 +52,13 @@ try {
         $basenameNoExt = [System.IO.Path]::GetFileNameWithoutExtension($filename)
         $datePrefix = Get-Date -Format "yyMMdd"
 
-        # フォルダ名用: ファイル名に日付プレフィックス (YYMMDD_) が付いている場合は除去して重複防止
+        # フォルダ名用: ファイル名に日付プレフィックス (YYYYMMDD_ or YYMMDD_) が付いている場合は除去して重複防止
         $folderBase = $basenameNoExt
-        if ($basenameNoExt -match '^\d{6}_') {
+        if ($basenameNoExt -match '^\d{8}_') {
+            $datePrefix = $basenameNoExt.Substring(2, 6)
+            $folderBase = $basenameNoExt.Substring(9)
+        } elseif ($basenameNoExt -match '^\d{6}_') {
+            $datePrefix = $basenameNoExt.Substring(0, 6)
             $folderBase = $basenameNoExt.Substring(7)
         }
 
