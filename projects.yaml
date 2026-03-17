@@ -1,0 +1,27 @@
+# ダウンロード自動仕分けツール - プロジェクト定義
+#
+# root_folder: 整理先ルートフォルダ（GUIからも変更可能）
+# watch_folder: 監視するフォルダ（null = ~/Downloads）
+# confidence_threshold: AI信頼度の閾値（0.0〜1.0）
+#   - 閾値以上 → 自動移動
+#   - 閾値未満 → 通知で確認 or _未分類フォルダへ
+#
+# projects: プロジェクト定義
+#   - name: プロジェクト名（root_folder 直下のフォルダ名と一致）
+#   - keywords: ファイル名マッチ用のキーワード一覧
+#   - path: カスタムパス（null = root_folder/name を使用）
+
+root_folder: "D:/Projects"
+watch_folder: null
+confidence_threshold: 0.7
+
+projects:
+  - name: 堺東駅前広場
+    keywords: [堺東, sakaihigashi]
+    path: null
+  - name: 門真市駅前
+    keywords: [門真, kadoma]
+    path: null
+  - name: ツール管理
+    keywords: [ツール, tool]
+    path: null
