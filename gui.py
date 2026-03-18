@@ -962,6 +962,8 @@ class MainWindow(QMainWindow):
     def _on_watcher_sorted(self, filepath, result, moved_to):
         """Watcher がファイルを仕分けた時のコールバック。"""
         self._undo_stack.append((moved_to, filepath))
+        self._last_batch_undo.append((moved_to, filepath))
+        self._update_comment_indicator()
 
     def _on_watcher_low_confidence(self, filepath, result):
         """Watcher が低信頼度と判断した時のコールバック。"""
@@ -1236,8 +1238,14 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "処理中", "処理中です。完了をお待ちください。")
             return
 
+        # Watcher が稼働中なら一時停止して二重検知を防ぐ
+        watcher_was_running = self._watcher and self._watcher.is_running
+
         restored_files = []
         for moved_to, original_path in reversed(self._last_batch_undo):
+            # 元に戻すファイルを watcher の無視リストに登録
+            if watcher_was_running:
+                self._watcher.ignore_path(original_path)
             success = undo_move(moved_to, original_path)
             if success:
                 restored_files.append(original_path)
@@ -1247,6 +1255,8 @@ class MainWindow(QMainWindow):
                     pass
             else:
                 self._append_log(f"再分類スキップ（元に戻せず）: {moved_to}", self._theme.warn)
+
+        self._last_batch_undo = []
 
         if not restored_files:
             self._append_log("再分類するファイルがありません。", self._theme.error)

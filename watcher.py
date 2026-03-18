@@ -53,6 +53,7 @@ class DownloadHandler(FileSystemEventHandler):
         self.on_low_confidence = on_low_confidence  # callback(filepath, result)
         self.on_log = on_log  # callback(message)
         self.user_comment = ""  # GUIからのコメントを反映
+        self._ignore_paths: set[str] = set()  # 再分類時の二重検知防止
 
     def _log(self, message: str):
         now = datetime.now().strftime("%H:%M:%S")
@@ -77,6 +78,12 @@ class DownloadHandler(FileSystemEventHandler):
 
         # 監視ディレクトリ直下のファイルのみ対象
         if filepath.parent != self.watch_dir:
+            return
+
+        # 再分類で戻されたファイルは無視（二重検知防止）
+        filepath_str = str(filepath)
+        if filepath_str in self._ignore_paths:
+            self._ignore_paths.discard(filepath_str)
             return
 
         filename = filepath.name
@@ -232,6 +239,10 @@ class FolderWatcher:
     def set_comment(self, comment: str):
         """GUIからのコメントを設定する。"""
         self.handler.user_comment = comment
+
+    def ignore_path(self, filepath: str):
+        """指定パスを一度だけ検知対象から除外する（再分類の二重検知防止）。"""
+        self.handler._ignore_paths.add(filepath)
 
     def update_config(
         self,
