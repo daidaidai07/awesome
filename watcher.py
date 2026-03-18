@@ -52,6 +52,7 @@ class DownloadHandler(FileSystemEventHandler):
         self.on_sorted = on_sorted  # callback(filepath, result, moved_to)
         self.on_low_confidence = on_low_confidence  # callback(filepath, result)
         self.on_log = on_log  # callback(message)
+        self.user_comment = ""  # GUIからのコメントを反映
 
     def _log(self, message: str):
         now = datetime.now().strftime("%H:%M:%S")
@@ -94,6 +95,8 @@ class DownloadHandler(FileSystemEventHandler):
             return
 
         self._log(f"検知: {filename}")
+        if self.user_comment:
+            self._log(f"コメント反映: {self.user_comment}")
 
         # プロジェクト構造をスキャン
         projects = scan_projects(self.root_folder)
@@ -112,7 +115,7 @@ class DownloadHandler(FileSystemEventHandler):
             projects=projects,
             subfolder_map=subfolder_map,
             yaml_config=self.yaml_config,
-            user_comment="",  # 常時監視モードではコメントなし
+            user_comment=self.user_comment,
         )
 
         project = result["project"]
@@ -225,6 +228,10 @@ class FolderWatcher:
             self._observer.stop()
             self._observer.join()
             self._observer = None
+
+    def set_comment(self, comment: str):
+        """GUIからのコメントを設定する。"""
+        self.handler.user_comment = comment
 
     def update_config(
         self,

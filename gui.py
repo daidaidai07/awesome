@@ -989,8 +989,14 @@ class MainWindow(QMainWindow):
         t = self._theme
         text = self._comment_edit.text().strip()
         has_last_files = bool(self._last_batch_undo)
+        is_watching = self._watcher and self._watcher.is_running
+
         if text:
-            if has_last_files:
+            if is_watching and has_last_files:
+                self._comment_badge.setText("✔ 入力済み（監視・送信・ドロップに反映）")
+            elif is_watching:
+                self._comment_badge.setText("✔ 入力済み（監視中のファイルにも反映）")
+            elif has_last_files:
                 self._comment_badge.setText("✔ 入力済み（送信で再分類 / ドロップで新規分類）")
             else:
                 self._comment_badge.setText("✔ 入力済み（ドロップ時にAIへ送信）")
@@ -1008,6 +1014,10 @@ class MainWindow(QMainWindow):
             )
             self._comment_clear_btn.setVisible(False)
             self._comment_send_btn.setEnabled(False)
+
+        # 監視中の watcher にもコメントを反映
+        if self._watcher and self._watcher.is_running:
+            self._watcher.set_comment(text)
 
     def _update_history_hint(self):
         t = self._theme
