@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>チャレンジ大和田 | 大和田駅前まちづくりポータル</title>
+  <meta name="description" content="大和田駅前を魅力的に。地域の人々がまちづくりを考えるきっかけとなる取組み「チャレンジ大和田」公式ポータルサイト">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700;900&family=Montserrat:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            owada: {
+              blue: '#0B7DC3',
+              'blue-dark': '#065A8E',
+              'blue-deeper': '#04395E',
+              yellow: '#F5E44B',
+              'yellow-light': '#FFF9C4',
+              'yellow-warm': '#FFD54F',
+              cream: '#FFFDE7',
+              sky: '#E3F2FD',
+            }
+          },
+          fontFamily: {
+            sans: ['Noto Sans JP', 'sans-serif'],
+            display: ['Montserrat', 'Noto Sans JP', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html { scroll-behavior: smooth; }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #E3F2FD; }
+    ::-webkit-scrollbar-thumb { background: #0B7DC3; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #065A8E; }
+
+    /* Reveal animations */
+    .reveal {
+      opacity: 0;
+      transform: translateY(40px);
+      transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .reveal.active {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .reveal-left {
+      opacity: 0;
+      transform: translateX(-60px);
+      transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .reveal-left.active {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    .reveal-right {
+      opacity: 0;
+      transform: translateX(60px);
+      transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .reveal-right.active {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    .reveal-scale {
+      opacity: 0;
+      transform: scale(0.85);
+      transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .reveal-scale.active {
+      opacity: 1;
+      transform: scale(1);
+    }
+    .stagger-1 { transition-delay: 0.1s; }
+    .stagger-2 { transition-delay: 0.2s; }
+    .stagger-3 { transition-delay: 0.3s; }
+    .stagger-4 { transition-delay: 0.4s; }
+    .stagger-5 { transition-delay: 0.5s; }
+
+    /* Hero parallax wave */
+    @keyframes wave-flow {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .wave-animate {
+      animation: wave-flow 12s linear infinite;
+    }
+
+    /* Floating animation */
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-15px); }
+    }
+    .float { animation: float 4s ease-in-out infinite; }
+    .float-delayed { animation: float 4s ease-in-out 1s infinite; }
+    .float-slow { animation: float 6s ease-in-out 0.5s infinite; }
+
+    /* Pulse glow */
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 20px rgba(245, 228, 75, 0.3); }
+      50% { box-shadow: 0 0 40px rgba(245, 228, 75, 0.6); }
+    }
+    .pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+
+    /* Gradient text */
+    .gradient-text {
+      background: linear-gradient(135deg, #0B7DC3, #F5E44B);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* Card hover */
+    .card-hover {
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .card-hover:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 20px 60px rgba(11, 125, 195, 0.15);
+    }
+
+    /* Diagonal section divider */
+    .diagonal-top {
+      clip-path: polygon(0 8%, 100% 0, 100% 100%, 0 100%);
+    }
+    @media (max-width: 768px) {
+      .diagonal-top { clip-path: polygon(0 3%, 100% 0, 100% 100%, 0 100%); }
+    }
+
+    /* Timeline */
+    .timeline-line {
+      background: linear-gradient(to bottom, #0B7DC3, #F5E44B);
+    }
+
+    /* Nav blur */
+    .nav-blur {
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    /* Marquee */
+    @keyframes marquee {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .marquee { animation: marquee 30s linear infinite; }
+
+    /* Particle dots */
+    @keyframes drift {
+      0% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
+      20% { opacity: 1; }
+      80% { opacity: 1; }
+      100% { transform: translate(var(--dx), var(--dy)) rotate(360deg); opacity: 0; }
+    }
+  </style>
+</head>
+<body class="font-sans text-gray-800 overflow-x-hidden">
+
+  <!-- ============================================= -->
+  <!-- NAVIGATION -->
+  <!-- ============================================= -->
+  <nav id="navbar" class="fixed top-0 left-0 right-0 z-50 transition-all duration-500">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16 md:h-20">
+        <a href="#hero" class="flex items-center gap-2 group">
+          <img src="assets/logo.svg" alt="チャレンジ大和田" class="h-10 w-10 md:h-12 md:w-12 rounded-lg shadow-md group-hover:scale-110 transition-transform duration-300">
+          <span class="font-display font-bold text-sm md:text-base tracking-wide hidden sm:block nav-text-color transition-colors duration-300">CHALLENGE OWADA</span>
+        </a>
+        <!-- Desktop Nav -->
+        <div class="hidden md:flex items-center gap-1">
+          <a href="#about" class="nav-link px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:bg-white/20">About</a>
+          <a href="#events" class="nav-link px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:bg-white/20">Events</a>
+          <a href="#apply" class="nav-link px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:bg-white/20">参加する</a>
+          <a href="#gallery" class="nav-link px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:bg-white/20">Gallery</a>
+          <a href="#faq" class="nav-link px-3 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:bg-white/20">FAQ</a>
+          <a href="#contact" class="ml-2 px-5 py-2 bg-owada-yellow text-owada-blue-deeper font-bold text-sm rounded-full hover:bg-yellow-300 transition-all duration-300 hover:scale-105 shadow-lg">お問合せ</a>
+        </div>
+        <!-- Mobile Hamburger -->
+        <button id="mobile-menu-btn" class="md:hidden flex flex-col gap-1.5 p-2 z-50" aria-label="メニュー">
+          <span class="hamburger-line w-6 h-0.5 bg-white transition-all duration-300 origin-center"></span>
+          <span class="hamburger-line w-6 h-0.5 bg-white transition-all duration-300"></span>
+          <span class="hamburger-line w-6 h-0.5 bg-white transition-all duration-300 origin-center"></span>
+        </button>
+      </div>
+    </div>
+    <!-- Mobile Menu -->
+    <div id="mobile-menu" class="md:hidden fixed inset-0 bg-owada-blue-deeper/95 nav-blur z-40 flex flex-col items-center justify-center gap-6 opacity-0 pointer-events-none transition-all duration-500">
+      <a href="#about" class="mobile-nav-link text-2xl font-bold text-white hover:text-owada-yellow transition-colors">About</a>
+      <a href="#events" class="mobile-nav-link text-2xl font-bold text-white hover:text-owada-yellow transition-colors">Events</a>
+      <a href="#apply" class="mobile-nav-link text-2xl font-bold text-white hover:text-owada-yellow transition-colors">参加する</a>
+      <a href="#gallery" class="mobile-nav-link text-2xl font-bold text-white hover:text-owada-yellow transition-colors">Gallery</a>
+      <a href="#faq" class="mobile-nav-link text-2xl font-bold text-white hover:text-owada-yellow transition-colors">FAQ</a>
+      <a href="#contact" class="mt-4 px-8 py-3 bg-owada-yellow text-owada-blue-deeper font-bold text-xl rounded-full">お問合せ</a>
+    </div>
+  </nav>
+
+  <!-- ============================================= -->
+  <!-- HERO SECTION -->
+  <!-- ============================================= -->
+  <section id="hero" class="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-owada-blue-deeper via-owada-blue to-owada-blue-dark">
+    <!-- Animated background particles -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none" id="particles-container"></div>
+
+    <!-- Geometric background shapes -->
+    <div class="absolute top-20 left-10 w-32 h-32 md:w-64 md:h-64 border-2 border-owada-yellow/20 rounded-full float-slow"></div>
+    <div class="absolute bottom-32 right-10 w-24 h-24 md:w-48 md:h-48 border-2 border-white/10 rounded-2xl rotate-45 float-delayed"></div>
+    <div class="absolute top-1/3 right-1/4 w-16 h-16 md:w-32 md:h-32 bg-owada-yellow/5 rounded-full float"></div>
+
+    <!-- Hero Content -->
+    <div class="relative z-10 text-center px-4 max-w-5xl mx-auto">
+      <!-- Logo -->
+      <div class="mb-8 reveal-scale">
+        <div class="inline-block pulse-glow rounded-3xl">
+          <img src="assets/logo.svg" alt="チャレンジ大和田" class="w-40 h-40 sm:w-52 sm:h-52 md:w-64 md:h-64 rounded-3xl shadow-2xl">
+        </div>
+      </div>
+
+      <!-- Main heading -->
+      <h1 class="reveal stagger-1">
+        <span class="block font-display font-black text-owada-yellow text-lg sm:text-xl md:text-2xl tracking-[0.3em] mb-2">CHALLENGE</span>
+        <span class="block font-black text-white text-5xl sm:text-6xl md:text-8xl tracking-wide mb-2">大和田</span>
+        <span class="block font-display font-black text-owada-yellow text-2xl sm:text-3xl md:text-4xl tracking-[0.5em]">OWADA</span>
+      </h1>
+
+      <!-- Subtitle -->
+      <p class="mt-8 text-white/80 text-base sm:text-lg md:text-xl font-light leading-relaxed max-w-2xl mx-auto reveal stagger-2">
+        大和田駅前を、もっと魅力的に。<br>
+        地域のみんなで考える、<br class="sm:hidden">まちづくりのチャレンジ。
+      </p>
+
+      <!-- CTA Buttons -->
+      <div class="mt-10 flex flex-col sm:flex-row gap-4 justify-center reveal stagger-3">
+        <a href="#events" class="group inline-flex items-center justify-center px-8 py-4 bg-owada-yellow text-owada-blue-deeper font-bold text-lg rounded-full hover:bg-yellow-300 transition-all duration-300 hover:scale-105 shadow-xl hover:shadow-2xl">
+          <span>イベントを見る</span>
+          <svg class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+        </a>
+        <a href="#apply" class="inline-flex items-center justify-center px-8 py-4 border-2 border-white/40 text-white font-bold text-lg rounded-full hover:bg-white/10 hover:border-white transition-all duration-300">
+          参加申し込み
+        </a>
+      </div>
+
+      <!-- Event date badge -->
+      <div class="mt-12 reveal stagger-4">
+        <div class="inline-flex items-center gap-3 bg-white/10 nav-blur rounded-full px-6 py-3 border border-white/20">
+          <div class="w-3 h-3 bg-owada-yellow rounded-full animate-pulse"></div>
+          <span class="text-white text-sm md:text-base font-medium">2025年10月24日（金）〜26日（日）開催</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scroll indicator -->
+    <div class="absolute bottom-8 left-1/2 -translate-x-1/2 reveal stagger-5">
+      <a href="#about" class="flex flex-col items-center gap-2 text-white/50 hover:text-white transition-colors">
+        <span class="text-xs tracking-widest uppercase">Scroll</span>
+        <div class="w-6 h-10 border-2 border-current rounded-full flex justify-center pt-2">
+          <div class="w-1.5 h-1.5 bg-current rounded-full animate-bounce"></div>
+        </div>
+      </a>
+    </div>
+
+    <!-- Bottom wave -->
+    <div class="absolute bottom-0 left-0 right-0 overflow-hidden">
+      <svg class="w-[200%] wave-animate" viewBox="0 0 2400 120" preserveAspectRatio="none" style="height: 80px;">
+        <path d="M0,60 C400,120 800,0 1200,60 C1600,120 2000,0 2400,60 L2400,120 L0,120 Z" fill="white" opacity="0.1"/>
+        <path d="M0,80 C400,20 800,100 1200,50 C1600,0 2000,80 2400,40 L2400,120 L0,120 Z" fill="white" opacity="0.2"/>
+        <path d="M0,90 C300,60 600,110 1200,70 C1800,30 2100,100 2400,80 L2400,120 L0,120 Z" fill="white"/>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ============================================= -->
+  <!-- MARQUEE TICKER -->
+  <!-- ============================================= -->
+  <div class="bg-white py-3 overflow-hidden border-b border-gray-100">
+    <div class="marquee whitespace-nowrap">
+      <span class="inline-block text-sm font-medium text-owada-blue mx-8">🏗 大和田駅前まちづくり社会実験</span>
+      <span class="inline-block text-sm text-gray-400 mx-4">|</span>
+      <span class="inline-block text-sm font-medium text-owada-blue mx-8">📅 2025年10月24日〜26日</span>
+      <span class="inline-block text-sm text-gray-400 mx-4">|</span>
+      <span class="inline-block text-sm font-medium text-owada-blue mx-8">📍 大和田駅前広場</span>
+      <span class="inline-block text-sm text-gray-400 mx-4">|</span>
+      <span class="inline-block text-sm font-medium text-owada-blue mx-8">✨ イベント出店者募集中</span>
+      <span class="inline-block text-sm text-gray-400 mx-4">|</span>
+      <span class="inline-block text-sm font-medium text-owada-blue mx-8">🏗 大和田駅前まちづくり社会実験</span>
+      <span class="inline-block text-sm text-gray-400 mx-4">|</span>
+      <span class="inline-block text-sm font-medium text-owada-blue mx-8">📅 2025年10月24日〜26日</span>
+      <span class="inline-block text-sm text-gray-400 mx-4">|</span>
+      <span class="inline-block text-sm font-medium text-owada-blue mx-8">📍 大和田駅前広場</span>
+      <span class="inline-block text-sm text-gray-400 mx-4">|</span>
+      <span class="inline-block text-sm font-medium text-owada-blue mx-8">✨ イベント出店者募集中</span>
+    </div>
+  </div>
+
+  <!-- ============================================= -->
+  <!-- ABOUT SECTION -->
+  <!-- ============================================= -->
+  <section id="about" class="py-20 md:py-32 bg-white relative">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <!-- Section Header -->
+      <div class="text-center mb-16 md:mb-20">
+        <span class="reveal inline-block font-display font-bold text-owada-blue/30 text-sm tracking-[0.4em] uppercase">About</span>
+        <h2 class="reveal stagger-1 mt-4 font-bold text-3xl sm:text-4xl md:text-5xl text-gray-900">
+          チャレンジ大和田<span class="text-owada-blue">とは</span>
+        </h2>
+        <div class="reveal stagger-2 mt-4 mx-auto w-20 h-1 bg-gradient-to-r from-owada-blue to-owada-yellow rounded-full"></div>
+      </div>
+
+      <!-- About content -->
+      <div class="grid md:grid-cols-2 gap-12 md:gap-16 items-center">
+        <!-- Left: Visual -->
+        <div class="reveal-left relative">
+          <div class="relative rounded-3xl overflow-hidden shadow-2xl bg-gradient-to-br from-owada-blue to-owada-blue-deeper p-8 md:p-12">
+            <div class="absolute top-0 right-0 w-40 h-40 bg-owada-yellow/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+            <div class="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2"></div>
+            <div class="relative z-10">
+              <div class="text-owada-yellow font-display font-black text-6xl md:text-8xl leading-none mb-4">?</div>
+              <p class="text-white/90 text-xl md:text-2xl font-bold leading-relaxed">
+                大和田駅前を<br>
+                <span class="text-owada-yellow">もっと魅力的</span>に<br>
+                するには？
+              </p>
+              <p class="text-white/60 mt-6 text-base leading-relaxed">
+                みんなで考え、みんなで試す。<br>
+                それが「チャレンジ大和田」です。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Text -->
+        <div class="reveal-right space-y-6">
+          <p class="text-lg md:text-xl leading-relaxed text-gray-700">
+            <strong class="text-owada-blue">「チャレンジ大和田」</strong>は、大和田駅前を今後どのように魅力的にしていくか、地域の人々が<strong class="text-owada-blue-deeper">「まちづくりを考えるきっかけ」</strong>となることを目的とした取組みです。
+          </p>
+          <p class="text-base md:text-lg leading-relaxed text-gray-600">
+            大和田駅前広場を活用し、地域住民・事業者・行政が一体となって、駅前空間の新しい可能性を探る社会実験イベントを開催します。
+          </p>
+          <div class="grid grid-cols-2 gap-4 pt-4">
+            <div class="bg-owada-sky rounded-2xl p-5 text-center card-hover">
+              <div class="text-3xl md:text-4xl font-black text-owada-blue font-display">3</div>
+              <div class="text-sm text-gray-500 mt-1">日間の開催</div>
+            </div>
+            <div class="bg-owada-cream rounded-2xl p-5 text-center card-hover">
+              <div class="text-3xl md:text-4xl font-black text-owada-blue font-display">∞</div>
+              <div class="text-sm text-gray-500 mt-1">可能性を探る</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Values -->
+      <div class="mt-20 md:mt-28 grid sm:grid-cols-3 gap-8">
+        <div class="reveal stagger-1 text-center group">
+          <div class="w-20 h-20 mx-auto bg-owada-sky rounded-2xl flex items-center justify-center mb-5 group-hover:bg-owada-blue group-hover:scale-110 transition-all duration-500">
+            <svg class="w-10 h-10 text-owada-blue group-hover:text-white transition-colors duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/></svg>
+          </div>
+          <h3 class="font-bold text-xl text-gray-900 mb-2">みんなで考える</h3>
+          <p class="text-gray-500 text-sm leading-relaxed">地域住民・事業者・行政が一体となって、大和田の未来を描きます。</p>
+        </div>
+        <div class="reveal stagger-2 text-center group">
+          <div class="w-20 h-20 mx-auto bg-owada-cream rounded-2xl flex items-center justify-center mb-5 group-hover:bg-owada-yellow group-hover:scale-110 transition-all duration-500">
+            <svg class="w-10 h-10 text-owada-yellow-warm group-hover:text-owada-blue-deeper transition-colors duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5.002 5.002 0 117.072 0l.146.146a3 3 0 01.88 2.121v.94a1.5 1.5 0 01-1.5 1.5h-6.172a1.5 1.5 0 01-1.5-1.5v-.94a3 3 0 01.879-2.121l.146-.147z"/></svg>
+          </div>
+          <h3 class="font-bold text-xl text-gray-900 mb-2">試してみる</h3>
+          <p class="text-gray-500 text-sm leading-relaxed">社会実験を通じて、駅前空間の新しい使い方を実際に体験します。</p>
+        </div>
+        <div class="reveal stagger-3 text-center group">
+          <div class="w-20 h-20 mx-auto bg-blue-50 rounded-2xl flex items-center justify-center mb-5 group-hover:bg-owada-blue-deeper group-hover:scale-110 transition-all duration-500">
+            <svg class="w-10 h-10 text-owada-blue-dark group-hover:text-owada-yellow transition-colors duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5m.75-9l3-3 2.148 2.148A12.061 12.061 0 0116.5 7.605"/></svg>
+          </div>
+          <h3 class="font-bold text-xl text-gray-900 mb-2">未来をつくる</h3>
+          <p class="text-gray-500 text-sm leading-relaxed">実験の成果をもとに、大和田駅前の将来像を共に形にしていきます。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================= -->
+  <!-- EVENTS SECTION -->
+  <!-- ============================================= -->
+  <section id="events" class="relative py-20 md:py-32 bg-owada-sky diagonal-top">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16 md:mb-20">
+        <span class="reveal inline-block font-display font-bold text-owada-blue/30 text-sm tracking-[0.4em] uppercase">Social Experiment</span>
+        <h2 class="reveal stagger-1 mt-4 font-bold text-3xl sm:text-4xl md:text-5xl text-gray-900">
+          社会実験<span class="text-owada-blue">イベント</span>
+        </h2>
+        <div class="reveal stagger-2 mt-4 mx-auto w-20 h-1 bg-gradient-to-r from-owada-blue to-owada-yellow rounded-full"></div>
+        <p class="reveal stagger-3 mt-6 text-gray-500 max-w-xl mx-auto">大和田駅前広場で3日間にわたり、さまざまなイベントを開催します。</p>
+      </div>
+
+      <!-- Timeline -->
+      <div class="relative max-w-4xl mx-auto">
+        <!-- Timeline line (desktop) -->
+        <div class="hidden md:block absolute left-1/2 top-0 bottom-0 w-1 timeline-line rounded-full -translate-x-1/2"></div>
+
+        <!-- Day 1 -->
+        <div class="reveal-left md:flex md:items-center mb-12 md:mb-16 group">
+          <div class="md:w-1/2 md:pr-12 md:text-right">
+            <div class="bg-white rounded-2xl p-6 md:p-8 shadow-lg card-hover border border-gray-100">
+              <div class="inline-flex items-center gap-2 bg-owada-blue text-white text-xs font-bold px-3 py-1 rounded-full mb-4">
+                <span>DAY 1</span>
+              </div>
+              <h3 class="font-bold text-xl md:text-2xl text-gray-900 mb-2">10月24日（金）</h3>
+              <p class="text-gray-500 leading-relaxed">オープニングセレモニーとともに、駅前広場の新しい使い方を提案。ワークショップや展示でまちの未来を考えます。</p>
+              <div class="mt-4 flex flex-wrap gap-2 md:justify-end">
+                <span class="bg-owada-cream text-owada-blue-deeper text-xs px-3 py-1 rounded-full font-medium">ワークショップ</span>
+                <span class="bg-owada-cream text-owada-blue-deeper text-xs px-3 py-1 rounded-full font-medium">展示</span>
+              </div>
+            </div>
+          </div>
+          <!-- Timeline dot -->
+          <div class="hidden md:flex absolute left-1/2 -translate-x-1/2 w-6 h-6 bg-owada-blue rounded-full border-4 border-white shadow-lg group-hover:scale-125 transition-transform"></div>
+          <div class="md:w-1/2"></div>
+        </div>
+
+        <!-- Day 2 -->
+        <div class="reveal-right md:flex md:items-center mb-12 md:mb-16 group">
+          <div class="md:w-1/2"></div>
+          <!-- Timeline dot -->
+          <div class="hidden md:flex absolute left-1/2 -translate-x-1/2 w-6 h-6 bg-owada-yellow rounded-full border-4 border-white shadow-lg group-hover:scale-125 transition-transform"></div>
+          <div class="md:w-1/2 md:pl-12">
+            <div class="bg-white rounded-2xl p-6 md:p-8 shadow-lg card-hover border border-gray-100">
+              <div class="inline-flex items-center gap-2 bg-owada-yellow text-owada-blue-deeper text-xs font-bold px-3 py-1 rounded-full mb-4">
+                <span>DAY 2</span>
+              </div>
+              <h3 class="font-bold text-xl md:text-2xl text-gray-900 mb-2">10月25日（土）</h3>
+              <p class="text-gray-500 leading-relaxed">マルシェやフードイベントで賑わう駅前広場。地元の魅力を再発見するコンテンツが盛りだくさんです。</p>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span class="bg-owada-sky text-owada-blue text-xs px-3 py-1 rounded-full font-medium">マルシェ</span>
+                <span class="bg-owada-sky text-owada-blue text-xs px-3 py-1 rounded-full font-medium">フード</span>
+                <span class="bg-owada-sky text-owada-blue text-xs px-3 py-1 rounded-full font-medium">音楽</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Day 3 -->
+        <div class="reveal-left md:flex md:items-center group">
+          <div class="md:w-1/2 md:pr-12 md:text-right">
+            <div class="bg-white rounded-2xl p-6 md:p-8 shadow-lg card-hover border border-gray-100">
+              <div class="inline-flex items-center gap-2 bg-gradient-to-r from-owada-blue to-owada-blue-dark text-white text-xs font-bold px-3 py-1 rounded-full mb-4">
+                <span>DAY 3</span>
+              </div>
+              <h3 class="font-bold text-xl md:text-2xl text-gray-900 mb-2">10月26日（日）</h3>
+              <p class="text-gray-500 leading-relaxed">3日間の締めくくり。体験型コンテンツやステージイベントで大和田の未来をみんなで祝います。</p>
+              <div class="mt-4 flex flex-wrap gap-2 md:justify-end">
+                <span class="bg-owada-cream text-owada-blue-deeper text-xs px-3 py-1 rounded-full font-medium">ステージ</span>
+                <span class="bg-owada-cream text-owada-blue-deeper text-xs px-3 py-1 rounded-full font-medium">体験</span>
+                <span class="bg-owada-cream text-owada-blue-deeper text-xs px-3 py-1 rounded-full font-medium">クロージング</span>
+              </div>
+            </div>
+          </div>
+          <div class="hidden md:flex absolute left-1/2 -translate-x-1/2 w-6 h-6 bg-gradient-to-r from-owada-blue to-owada-yellow rounded-full border-4 border-white shadow-lg group-hover:scale-125 transition-transform"></div>
+          <div class="md:w-1/2"></div>
+        </div>
+      </div>
+
+      <!-- Notice -->
+      <div class="reveal mt-16 text-center">
+        <div class="inline-flex items-center gap-3 bg-white/80 nav-blur rounded-2xl px-6 py-4 shadow-md border border-owada-blue/10">
+          <svg class="w-5 h-5 text-owada-blue flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span class="text-sm text-gray-600">各日のイベント内容や出店リストは順次掲載します。</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================= -->
+  <!-- APPLY / PARTICIPATION SECTION -->
+  <!-- ============================================= -->
+  <section id="apply" class="py-20 md:py-32 bg-white relative overflow-hidden">
+    <!-- Background decoration -->
+    <div class="absolute top-0 right-0 w-96 h-96 bg-owada-yellow/5 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+    <div class="absolute bottom-0 left-0 w-64 h-64 bg-owada-sky/50 rounded-full translate-y-1/2 -translate-x-1/2"></div>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      <div class="text-center mb-16 md:mb-20">
+        <span class="reveal inline-block font-display font-bold text-owada-blue/30 text-sm tracking-[0.4em] uppercase">Application</span>
+        <h2 class="reveal stagger-1 mt-4 font-bold text-3xl sm:text-4xl md:text-5xl text-gray-900">
+          広場活用の<span class="text-owada-blue">募集</span>
+        </h2>
+        <div class="reveal stagger-2 mt-4 mx-auto w-20 h-1 bg-gradient-to-r from-owada-blue to-owada-yellow rounded-full"></div>
+      </div>
+
+      <div class="max-w-4xl mx-auto">
+        <div class="reveal bg-gradient-to-br from-owada-blue-deeper via-owada-blue to-owada-blue-dark rounded-3xl p-8 md:p-12 lg:p-16 text-white relative overflow-hidden shadow-2xl">
+          <!-- Decorative elements -->
+          <div class="absolute top-0 right-0 w-80 h-80 bg-owada-yellow/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+          <div class="absolute bottom-0 left-0 w-60 h-60 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2"></div>
+
+          <div class="relative z-10">
+            <h3 class="text-2xl md:text-3xl font-bold mb-6">
+              あなたのアイデアで、<br>
+              <span class="text-owada-yellow">駅前をもっと楽しく。</span>
+            </h3>
+            <p class="text-white/70 text-base md:text-lg leading-relaxed mb-8 max-w-2xl">
+              大和田駅前広場を使って、自身が企画したイベントを社会実験として開催してみたい方・団体を募集しています。飲食出店、ワークショップ、パフォーマンス、展示など、あなたのチャレンジをお待ちしています。
+            </p>
+
+            <div class="grid sm:grid-cols-2 gap-4 mb-10">
+              <div class="bg-white/10 nav-blur rounded-xl p-5 border border-white/10">
+                <div class="flex items-center gap-3 mb-2">
+                  <div class="w-8 h-8 bg-owada-yellow/20 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-owada-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10" stroke-width="2"/></svg>
+                  </div>
+                  <h4 class="font-bold text-sm">開催期間</h4>
+                </div>
+                <p class="text-white/70 text-sm">2025年10月24日〜26日</p>
+              </div>
+              <div class="bg-white/10 nav-blur rounded-xl p-5 border border-white/10">
+                <div class="flex items-center gap-3 mb-2">
+                  <div class="w-8 h-8 bg-owada-yellow/20 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-owada-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                  </div>
+                  <h4 class="font-bold text-sm">場所</h4>
+                </div>
+                <p class="text-white/70 text-sm">大和田駅前広場</p>
+              </div>
+              <div class="bg-white/10 nav-blur rounded-xl p-5 border border-white/10">
+                <div class="flex items-center gap-3 mb-2">
+                  <div class="w-8 h-8 bg-owada-yellow/20 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-owada-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                  </div>
+                  <h4 class="font-bold text-sm">対象</h4>
+                </div>
+                <p class="text-white/70 text-sm">個人・団体・企業どなたでも</p>
+              </div>
+              <div class="bg-white/10 nav-blur rounded-xl p-5 border border-white/10">
+                <div class="flex items-center gap-3 mb-2">
+                  <div class="w-8 h-8 bg-owada-yellow/20 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-owada-yellow" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                  </div>
+                  <h4 class="font-bold text-sm">募集内容</h4>
+                </div>
+                <p class="text-white/70 text-sm">飲食・物販・ワークショップなど</p>
+              </div>
+            </div>
+
+            <a href="#contact" class="inline-flex items-center justify-center px-8 py-4 bg-owada-yellow text-owada-blue-deeper font-bold text-lg rounded-full hover:bg-yellow-300 transition-all duration-300 hover:scale-105 shadow-xl group">
+              <span>応募する</span>
+              <svg class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================= -->
+  <!-- GALLERY / PAST INFO SECTION -->
+  <!-- ============================================= -->
+  <section id="gallery" class="py-20 md:py-32 bg-gray-50 diagonal-top relative">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16 md:mb-20">
+        <span class="reveal inline-block font-display font-bold text-owada-blue/30 text-sm tracking-[0.4em] uppercase">Past Info</span>
+        <h2 class="reveal stagger-1 mt-4 font-bold text-3xl sm:text-4xl md:text-5xl text-gray-900">
+          昨年度の<span class="text-owada-blue">ようす</span>
+        </h2>
+        <div class="reveal stagger-2 mt-4 mx-auto w-20 h-1 bg-gradient-to-r from-owada-blue to-owada-yellow rounded-full"></div>
+      </div>
+
+      <!-- Gallery grid -->
+      <div class="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+        <div class="reveal stagger-1 col-span-2 md:col-span-1 md:row-span-2 rounded-2xl overflow-hidden shadow-lg card-hover bg-gradient-to-br from-owada-blue to-owada-blue-dark min-h-[250px] md:min-h-[400px] flex items-end p-6">
+          <div>
+            <span class="text-owada-yellow text-xs font-bold tracking-wider uppercase">2024</span>
+            <h3 class="text-white font-bold text-xl mt-1">駅前広場が<br>賑わいの場に</h3>
+          </div>
+        </div>
+        <div class="reveal stagger-2 rounded-2xl overflow-hidden shadow-lg card-hover bg-gradient-to-br from-owada-yellow to-yellow-400 min-h-[180px] flex items-end p-6">
+          <div>
+            <h3 class="text-owada-blue-deeper font-bold">マルシェ出店</h3>
+            <p class="text-owada-blue-deeper/60 text-sm">地元の美味しいが集結</p>
+          </div>
+        </div>
+        <div class="reveal stagger-3 rounded-2xl overflow-hidden shadow-lg card-hover bg-gradient-to-br from-blue-100 to-owada-sky min-h-[180px] flex items-end p-6">
+          <div>
+            <h3 class="text-owada-blue-deeper font-bold">ワークショップ</h3>
+            <p class="text-owada-blue-dark/60 text-sm">みんなで未来を考えた</p>
+          </div>
+        </div>
+        <div class="reveal stagger-4 rounded-2xl overflow-hidden shadow-lg card-hover bg-gradient-to-br from-owada-blue-deeper to-gray-900 min-h-[180px] flex items-end p-6">
+          <div>
+            <h3 class="text-white font-bold">ステージイベント</h3>
+            <p class="text-white/60 text-sm">音楽とパフォーマンス</p>
+          </div>
+        </div>
+        <div class="reveal stagger-5 rounded-2xl overflow-hidden shadow-lg card-hover bg-gradient-to-br from-owada-cream to-yellow-100 min-h-[180px] flex items-end p-6">
+          <div>
+            <h3 class="text-owada-blue-deeper font-bold">キッズエリア</h3>
+            <p class="text-owada-blue-deeper/60 text-sm">子どもも大人も笑顔に</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================= -->
+  <!-- ACCESS SECTION -->
+  <!-- ============================================= -->
+  <section id="access" class="py-20 md:py-32 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16 md:mb-20">
+        <span class="reveal inline-block font-display font-bold text-owada-blue/30 text-sm tracking-[0.4em] uppercase">Access</span>
+        <h2 class="reveal stagger-1 mt-4 font-bold text-3xl sm:text-4xl md:text-5xl text-gray-900">
+          アクセス<span class="text-owada-blue">情報</span>
+        </h2>
+        <div class="reveal stagger-2 mt-4 mx-auto w-20 h-1 bg-gradient-to-r from-owada-blue to-owada-yellow rounded-full"></div>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-8 md:gap-12 items-center max-w-5xl mx-auto">
+        <!-- Map placeholder -->
+        <div class="reveal-left rounded-2xl overflow-hidden shadow-xl h-[300px] md:h-[400px] bg-gray-200 relative">
+          <iframe
+            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3230.7!2d139.6464!3d35.9287!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x6018c7a8a8a8a8a7%3A0x0!2z5aSn5ZKM55Sw6aeF!5e0!3m2!1sja!2sjp!4v1"
+            width="100%" height="100%" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+            class="absolute inset-0">
+          </iframe>
+          <div class="absolute inset-0 bg-gradient-to-t from-owada-blue-deeper/20 to-transparent pointer-events-none"></div>
+        </div>
+
+        <!-- Access info -->
+        <div class="reveal-right space-y-6">
+          <div class="flex items-start gap-4">
+            <div class="w-12 h-12 bg-owada-sky rounded-xl flex items-center justify-center flex-shrink-0">
+              <svg class="w-6 h-6 text-owada-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            </div>
+            <div>
+              <h3 class="font-bold text-lg text-gray-900">会場</h3>
+              <p class="text-gray-500 mt-1">大和田駅前広場</p>
+              <p class="text-gray-400 text-sm mt-1">〒337-0053 埼玉県さいたま市見沼区大和田町</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="w-12 h-12 bg-owada-cream rounded-xl flex items-center justify-center flex-shrink-0">
+              <svg class="w-6 h-6 text-owada-yellow-warm" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+              <h3 class="font-bold text-lg text-gray-900">電車でお越しの方</h3>
+              <p class="text-gray-500 mt-1">東武アーバンパークライン（野田線）<br><strong class="text-owada-blue">大和田駅</strong> 下車すぐ</p>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <span class="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full">大宮駅から約6分</span>
+                <span class="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full">春日部駅から約15分</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
+              <svg class="w-6 h-6 text-owada-blue-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+              <h3 class="font-bold text-lg text-gray-900">ご注意</h3>
+              <p class="text-gray-500 mt-1 text-sm">会場には専用駐車場がございません。公共交通機関をご利用ください。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================= -->
+  <!-- FAQ SECTION -->
+  <!-- ============================================= -->
+  <section id="faq" class="py-20 md:py-32 bg-owada-cream diagonal-top">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16 md:mb-20">
+        <span class="reveal inline-block font-display font-bold text-owada-blue/30 text-sm tracking-[0.4em] uppercase">FAQ</span>
+        <h2 class="reveal stagger-1 mt-4 font-bold text-3xl sm:text-4xl md:text-5xl text-gray-900">
+          よくある<span class="text-owada-blue">質問</span>
+        </h2>
+        <div class="reveal stagger-2 mt-4 mx-auto w-20 h-1 bg-gradient-to-r from-owada-blue to-owada-yellow rounded-full"></div>
+      </div>
+
+      <div class="space-y-4" id="faq-container">
+        <!-- FAQ items rendered by JS -->
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================= -->
+  <!-- CONTACT SECTION -->
+  <!-- ============================================= -->
+  <section id="contact" class="py-20 md:py-32 bg-gradient-to-br from-owada-blue-deeper via-owada-blue to-owada-blue-dark relative overflow-hidden">
+    <!-- Decorative -->
+    <div class="absolute top-0 left-0 w-96 h-96 bg-owada-yellow/5 rounded-full -translate-y-1/2 -translate-x-1/2"></div>
+    <div class="absolute bottom-0 right-0 w-80 h-80 bg-white/5 rounded-full translate-y-1/2 translate-x-1/2"></div>
+
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+      <div class="text-center mb-16 md:mb-20">
+        <span class="reveal inline-block font-display font-bold text-white/30 text-sm tracking-[0.4em] uppercase">Contact Us</span>
+        <h2 class="reveal stagger-1 mt-4 font-bold text-3xl sm:text-4xl md:text-5xl text-white">
+          お問合せ
+        </h2>
+        <div class="reveal stagger-2 mt-4 mx-auto w-20 h-1 bg-gradient-to-r from-owada-yellow to-white rounded-full"></div>
+        <p class="reveal stagger-3 mt-6 text-white/60 max-w-xl mx-auto">イベントに関するご質問、出店のご相談など、お気軽にお問い合わせください。</p>
+      </div>
+
+      <div class="reveal max-w-2xl mx-auto">
+        <form class="space-y-6" onsubmit="event.preventDefault(); alert('お問い合わせありがとうございます。担当者より折り返しご連絡いたします。');">
+          <div class="grid sm:grid-cols-2 gap-6">
+            <div>
+              <label class="block text-white/70 text-sm font-medium mb-2">お名前 <span class="text-owada-yellow">*</span></label>
+              <input type="text" required class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-owada-yellow focus:border-transparent transition-all" placeholder="山田 太郎">
+            </div>
+            <div>
+              <label class="block text-white/70 text-sm font-medium mb-2">メールアドレス <span class="text-owada-yellow">*</span></label>
+              <input type="email" required class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-owada-yellow focus:border-transparent transition-all" placeholder="example@email.com">
+            </div>
+          </div>
+          <div>
+            <label class="block text-white/70 text-sm font-medium mb-2">お問い合わせ種別</label>
+            <select class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-owada-yellow focus:border-transparent transition-all">
+              <option value="" class="text-gray-800">選択してください</option>
+              <option value="event" class="text-gray-800">イベントについて</option>
+              <option value="apply" class="text-gray-800">出店・出展について</option>
+              <option value="media" class="text-gray-800">メディア・取材について</option>
+              <option value="other" class="text-gray-800">その他</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-white/70 text-sm font-medium mb-2">お問い合わせ内容 <span class="text-owada-yellow">*</span></label>
+            <textarea required rows="5" class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-owada-yellow focus:border-transparent transition-all resize-none" placeholder="お問い合わせ内容をご記入ください"></textarea>
+          </div>
+          <div class="text-center pt-4">
+            <button type="submit" class="inline-flex items-center justify-center px-10 py-4 bg-owada-yellow text-owada-blue-deeper font-bold text-lg rounded-full hover:bg-yellow-300 transition-all duration-300 hover:scale-105 shadow-xl group">
+              <span>送信する</span>
+              <svg class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================= -->
+  <!-- FOOTER -->
+  <!-- ============================================= -->
+  <footer class="bg-gray-900 py-12 md:py-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="grid md:grid-cols-3 gap-10 md:gap-16">
+        <!-- Brand -->
+        <div>
+          <div class="flex items-center gap-3 mb-4">
+            <img src="assets/logo.svg" alt="チャレンジ大和田" class="w-12 h-12 rounded-lg">
+            <div>
+              <div class="text-white font-display font-bold text-sm tracking-wider">CHALLENGE OWADA</div>
+              <div class="text-gray-400 text-xs">チャレンジ大和田</div>
+            </div>
+          </div>
+          <p class="text-gray-400 text-sm leading-relaxed">大和田駅前を今後どのように魅力的にしていくか、地域の人々がまちづくりを考えるきっかけとなる取組みです。</p>
+        </div>
+
+        <!-- Links -->
+        <div>
+          <h4 class="text-white font-bold mb-4 text-sm tracking-wider uppercase">Menu</h4>
+          <ul class="space-y-2">
+            <li><a href="#about" class="text-gray-400 text-sm hover:text-owada-yellow transition-colors">About</a></li>
+            <li><a href="#events" class="text-gray-400 text-sm hover:text-owada-yellow transition-colors">社会実験イベント</a></li>
+            <li><a href="#apply" class="text-gray-400 text-sm hover:text-owada-yellow transition-colors">広場活用の募集</a></li>
+            <li><a href="#gallery" class="text-gray-400 text-sm hover:text-owada-yellow transition-colors">昨年度のようす</a></li>
+            <li><a href="#faq" class="text-gray-400 text-sm hover:text-owada-yellow transition-colors">FAQ</a></li>
+            <li><a href="#contact" class="text-gray-400 text-sm hover:text-owada-yellow transition-colors">お問合せ</a></li>
+          </ul>
+        </div>
+
+        <!-- Info -->
+        <div>
+          <h4 class="text-white font-bold mb-4 text-sm tracking-wider uppercase">Information</h4>
+          <ul class="space-y-3">
+            <li class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-owada-yellow mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg>
+              <span class="text-gray-400 text-sm">大和田駅前広場<br>さいたま市見沼区大和田町</span>
+            </li>
+            <li class="flex items-center gap-3">
+              <svg class="w-5 h-5 text-owada-yellow flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              <span class="text-gray-400 text-sm">2025年10月24日〜26日</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="mt-12 pt-8 border-t border-gray-800 flex flex-col sm:flex-row justify-between items-center gap-4">
+        <p class="text-gray-500 text-xs">&copy; 2025 チャレンジ大和田. All rights reserved.</p>
+        <a href="#hero" class="text-gray-500 text-xs hover:text-owada-yellow transition-colors flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+          トップへ戻る
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ============================================= -->
+  <!-- JAVASCRIPT -->
+  <!-- ============================================= -->
+  <script>
+    // ==============================
+    // Scroll Reveal Animation
+    // ==============================
+    const revealElements = document.querySelectorAll('.reveal, .reveal-left, .reveal-right, .reveal-scale');
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('active');
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+    revealElements.forEach(el => revealObserver.observe(el));
+
+    // Trigger hero animations immediately
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('#hero .reveal, #hero .reveal-scale').forEach(el => {
+        setTimeout(() => el.classList.add('active'), 100);
+      });
+    });
+
+    // ==============================
+    // Navbar scroll behavior
+    // ==============================
+    const navbar = document.getElementById('navbar');
+    let lastScroll = 0;
+    window.addEventListener('scroll', () => {
+      const currentScroll = window.scrollY;
+      if (currentScroll > 80) {
+        navbar.classList.add('bg-owada-blue-deeper/95', 'nav-blur', 'shadow-lg');
+        navbar.querySelectorAll('.nav-link').forEach(l => l.classList.add('text-white'));
+        navbar.querySelector('.nav-text-color')?.classList.add('text-white');
+      } else {
+        navbar.classList.remove('bg-owada-blue-deeper/95', 'nav-blur', 'shadow-lg');
+        navbar.querySelectorAll('.nav-link').forEach(l => {
+          l.classList.add('text-white');
+        });
+        navbar.querySelector('.nav-text-color')?.classList.add('text-white');
+      }
+      lastScroll = currentScroll;
+    });
+    // Set initial nav colors
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.add('text-white'));
+    document.querySelector('.nav-text-color')?.classList.add('text-white');
+
+    // ==============================
+    // Mobile menu
+    // ==============================
+    const mobileBtn = document.getElementById('mobile-menu-btn');
+    const mobileMenu = document.getElementById('mobile-menu');
+    let menuOpen = false;
+    mobileBtn.addEventListener('click', () => {
+      menuOpen = !menuOpen;
+      if (menuOpen) {
+        mobileMenu.classList.remove('opacity-0', 'pointer-events-none');
+        mobileMenu.classList.add('opacity-100');
+        mobileBtn.children[0].style.transform = 'rotate(45deg) translate(4px, 4px)';
+        mobileBtn.children[1].style.opacity = '0';
+        mobileBtn.children[2].style.transform = 'rotate(-45deg) translate(4px, -4px)';
+      } else {
+        mobileMenu.classList.add('opacity-0', 'pointer-events-none');
+        mobileMenu.classList.remove('opacity-100');
+        mobileBtn.children[0].style.transform = '';
+        mobileBtn.children[1].style.opacity = '1';
+        mobileBtn.children[2].style.transform = '';
+      }
+    });
+    document.querySelectorAll('.mobile-nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        menuOpen = false;
+        mobileMenu.classList.add('opacity-0', 'pointer-events-none');
+        mobileMenu.classList.remove('opacity-100');
+        mobileBtn.children[0].style.transform = '';
+        mobileBtn.children[1].style.opacity = '1';
+        mobileBtn.children[2].style.transform = '';
+      });
+    });
+
+    // ==============================
+    // FAQ Accordion
+    // ==============================
+    const faqs = [
+      { q: '参加費はかかりますか？', a: 'イベントへの来場・参加は無料です。一部のワークショップや飲食等は有料の場合があります。' },
+      { q: '出店・出展の申し込み方法を教えてください。', a: '本サイトのお問い合わせフォームより、出店・出展希望の旨をご連絡ください。詳細な応募要項をお送りいたします。' },
+      { q: '雨天の場合はどうなりますか？', a: '小雨の場合は決行いたします。荒天の場合は中止となることがあります。最新情報は当サイトおよびSNSでお知らせいたします。' },
+      { q: '駐車場はありますか？', a: '会場には専用駐車場がございません。電車・バス等の公共交通機関をご利用ください。' },
+      { q: '子どもと一緒に参加できますか？', a: 'はい、お子様連れでお気軽にお越しください。キッズエリアや家族向けのワークショップもご用意しています。' },
+    ];
+
+    const faqContainer = document.getElementById('faq-container');
+    faqs.forEach((faq, i) => {
+      const div = document.createElement('div');
+      div.className = 'reveal stagger-' + Math.min(i + 1, 5);
+      div.innerHTML = `
+        <div class="faq-item bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden card-hover">
+          <button class="faq-toggle w-full px-6 py-5 flex items-center justify-between text-left group" onclick="toggleFaq(this)">
+            <span class="font-bold text-gray-900 pr-4 group-hover:text-owada-blue transition-colors">${faq.q}</span>
+            <svg class="faq-icon w-5 h-5 text-owada-blue flex-shrink-0 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div class="faq-answer max-h-0 overflow-hidden transition-all duration-500">
+            <div class="px-6 pb-5 text-gray-500 leading-relaxed">${faq.a}</div>
+          </div>
+        </div>
+      `;
+      faqContainer.appendChild(div);
+      // Re-observe for reveal
+      div.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+    });
+
+    function toggleFaq(btn) {
+      const answer = btn.nextElementSibling;
+      const icon = btn.querySelector('.faq-icon');
+      const isOpen = answer.style.maxHeight && answer.style.maxHeight !== '0px';
+      // Close all
+      document.querySelectorAll('.faq-answer').forEach(a => { a.style.maxHeight = '0px'; });
+      document.querySelectorAll('.faq-icon').forEach(ic => { ic.style.transform = 'rotate(0deg)'; });
+      if (!isOpen) {
+        answer.style.maxHeight = answer.scrollHeight + 'px';
+        icon.style.transform = 'rotate(180deg)';
+      }
+    }
+
+    // ==============================
+    // Hero particles
+    // ==============================
+    const particlesContainer = document.getElementById('particles-container');
+    function createParticle() {
+      const particle = document.createElement('div');
+      const size = Math.random() * 6 + 2;
+      const x = Math.random() * 100;
+      const y = Math.random() * 100;
+      const dx = (Math.random() - 0.5) * 200;
+      const dy = (Math.random() - 0.5) * 200;
+      const duration = Math.random() * 8 + 6;
+      const isYellow = Math.random() > 0.6;
+
+      particle.style.cssText = `
+        position: absolute;
+        width: ${size}px;
+        height: ${size}px;
+        background: ${isYellow ? 'rgba(245,228,75,0.4)' : 'rgba(255,255,255,0.2)'};
+        border-radius: 50%;
+        left: ${x}%;
+        top: ${y}%;
+        --dx: ${dx}px;
+        --dy: ${dy}px;
+        animation: drift ${duration}s ease-in-out infinite;
+      `;
+      particlesContainer.appendChild(particle);
+    }
+    for (let i = 0; i < 30; i++) createParticle();
+
+    // ==============================
+    // Smooth anchor scrolling offset
+    // ==============================
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          const offset = 80;
+          const pos = target.getBoundingClientRect().top + window.scrollY - offset;
+          window.scrollTo({ top: pos, behavior: 'smooth' });
+        }
+      });
+    });
+  </script>
+</body>
+</html>
